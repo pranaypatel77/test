@@ -23,3 +23,28 @@ nav ul {
 main {
   padding: 1rem;
 }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  padding: 0.5rem;
+  border-bottom: 1px solid #ddd;
+  text-align: left;
+}
+
+.transactions-amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.transactions-amount--income {
+  color: #1a7f37;
+}
+
+.transactions-amount--expense {
+  color: #c0392b;
+}
