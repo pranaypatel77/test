@@ -25,14 +25,5 @@ export function createDatabase(dbPath: string = DB_PATH): Database.Database {
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS transactions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      description TEXT NOT NULL,
-      amount_cents INTEGER NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
-
   return db;
 }

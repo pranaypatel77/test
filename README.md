@@ -24,7 +24,7 @@ URLs during development.
 
 ## Requirements
 
-- Node.js 18+
+- Node.js 20+
 - npm 10+
 
 ## Install
