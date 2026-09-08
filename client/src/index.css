@@ -1,0 +1,25 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+.app-header {
+  padding: 1rem;
+  border-bottom: 1px solid #ccc;
+}
+
+nav ul {
+  display: flex;
+  gap: 1rem;
+  list-style: none;
+  padding: 0.5rem 1rem;
+  margin: 0;
+}
+
+main {
+  padding: 1rem;
+}
