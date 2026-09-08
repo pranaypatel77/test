@@ -25,5 +25,25 @@ export function createDatabase(dbPath: string = DB_PATH): Database.Database {
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
 
+  migrate(db);
+
   return db;
+}
+
+/**
+ * Runs all schema migrations against the given database connection. Uses
+ * `CREATE TABLE IF NOT EXISTS` so it is safe to call on every boot.
+ */
+function migrate(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL,
+      payee TEXT NOT NULL,
+      category_id INTEGER,
+      note TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
 }
