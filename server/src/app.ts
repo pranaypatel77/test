@@ -3,6 +3,10 @@ import express, { type Express, type Request, type Response } from 'express';
 import { createDatabase, DB_PATH } from './db.js';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+const CATEGORY_KINDS = ['expense', 'income'] as const;
+
+type CategoryKind = (typeof CATEGORY_KINDS)[number];
 
 interface TransactionRow {
   id: number;
@@ -10,6 +14,8 @@ interface TransactionRow {
   amount_cents: number;
   payee: string;
   category_id: number | null;
+  category_name: string | null;
+  category_color: string | null;
   note: string | null;
   created_at: string;
 }
@@ -20,6 +26,100 @@ interface TransactionInput {
   payee: string;
   category_id: number | null;
   note: string | null;
+}
+
+interface CategoryRow {
+  id: number;
+  name: string;
+  color: string;
+  kind: CategoryKind;
+}
+
+interface CategoryInput {
+  name: string;
+  color: string;
+  kind: CategoryKind;
+}
+
+const TRANSACTION_SELECT = `
+  SELECT t.id, t.date, t.amount_cents, t.payee, t.category_id,
+         c.name AS category_name, c.color AS category_color,
+         t.note, t.created_at
+  FROM transactions t
+  LEFT JOIN categories c ON c.id = t.category_id
+`;
+
+function isValidHexColor(value: unknown): value is string {
+  return typeof value === 'string' && HEX_COLOR_PATTERN.test(value);
+}
+
+function isValidCategoryKind(value: unknown): value is CategoryKind {
+  return typeof value === 'string' && (CATEGORY_KINDS as readonly string[]).includes(value);
+}
+
+/**
+ * Validates a category create payload, requiring name, color, and kind.
+ */
+function parseCategoryInput(
+  body: unknown,
+): { ok: true; value: CategoryInput } | { ok: false; error: string } {
+  if (typeof body !== 'object' || body === null) {
+    return { ok: false, error: 'Request body must be a JSON object.' };
+  }
+
+  const { name, color, kind } = body as Record<string, unknown>;
+
+  if (typeof name !== 'string' || name.trim().length === 0) {
+    return { ok: false, error: 'name must be a non-empty string.' };
+  }
+
+  if (!isValidHexColor(color)) {
+    return { ok: false, error: 'color must be a hex color string, e.g. #4caf50.' };
+  }
+
+  if (!isValidCategoryKind(kind)) {
+    return { ok: false, error: "kind must be either 'expense' or 'income'." };
+  }
+
+  return { ok: true, value: { name, color, kind } };
+}
+
+/**
+ * Validates a category update payload. Unlike create, all fields are
+ * optional, but any field that is present must be valid.
+ */
+function parseCategoryUpdate(
+  body: unknown,
+): { ok: true; value: Partial<CategoryInput> } | { ok: false; error: string } {
+  if (typeof body !== 'object' || body === null) {
+    return { ok: false, error: 'Request body must be a JSON object.' };
+  }
+
+  const { name, color, kind } = body as Record<string, unknown>;
+  const value: Partial<CategoryInput> = {};
+
+  if (name !== undefined) {
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      return { ok: false, error: 'name must be a non-empty string.' };
+    }
+    value.name = name;
+  }
+
+  if (color !== undefined) {
+    if (!isValidHexColor(color)) {
+      return { ok: false, error: 'color must be a hex color string, e.g. #4caf50.' };
+    }
+    value.color = color;
+  }
+
+  if (kind !== undefined) {
+    if (!isValidCategoryKind(kind)) {
+      return { ok: false, error: "kind must be either 'expense' or 'income'." };
+    }
+    value.kind = kind;
+  }
+
+  return { ok: true, value };
 }
 
 /**
@@ -106,6 +206,114 @@ export function createApp(dbPath: string = DB_PATH): Express {
     res.json({ ok: true });
   });
 
+  app.get('/api/categories', (_req: Request, res: Response) => {
+    const rows = db
+      .prepare('SELECT id, name, color, kind FROM categories ORDER BY name ASC')
+      .all() as CategoryRow[];
+
+    res.json(rows);
+  });
+
+  app.post('/api/categories', (req: Request, res: Response) => {
+    const parsed = parseCategoryInput(req.body);
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+
+    const { name, color, kind } = parsed.value;
+
+    const existing = db.prepare('SELECT id FROM categories WHERE name = ?').get(name);
+    if (existing) {
+      res.status(409).json({ error: 'A category with that name already exists.' });
+      return;
+    }
+
+    const result = db
+      .prepare('INSERT INTO categories (name, color, kind) VALUES (@name, @color, @kind)')
+      .run({ name, color, kind });
+
+    const created = db
+      .prepare('SELECT id, name, color, kind FROM categories WHERE id = ?')
+      .get(result.lastInsertRowid) as CategoryRow;
+
+    res.status(201).json(created);
+  });
+
+  app.put('/api/categories/:id', (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      res.status(400).json({ error: 'id must be an integer.' });
+      return;
+    }
+
+    const existing = db.prepare('SELECT id, name, color, kind FROM categories WHERE id = ?').get(id) as
+      | CategoryRow
+      | undefined;
+    if (!existing) {
+      res.status(404).json({ error: 'Category not found.' });
+      return;
+    }
+
+    const parsed = parseCategoryUpdate(req.body);
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+
+    const name = parsed.value.name ?? existing.name;
+    const color = parsed.value.color ?? existing.color;
+    const kind = parsed.value.kind ?? existing.kind;
+
+    if (name !== existing.name) {
+      const duplicate = db.prepare('SELECT id FROM categories WHERE name = ? AND id != ?').get(name, id);
+      if (duplicate) {
+        res.status(409).json({ error: 'A category with that name already exists.' });
+        return;
+      }
+    }
+
+    db.prepare('UPDATE categories SET name = @name, color = @color, kind = @kind WHERE id = @id').run({
+      id,
+      name,
+      color,
+      kind,
+    });
+
+    const updated = db
+      .prepare('SELECT id, name, color, kind FROM categories WHERE id = ?')
+      .get(id) as CategoryRow;
+
+    res.json(updated);
+  });
+
+  app.delete('/api/categories/:id', (req: Request, res: Response) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      res.status(400).json({ error: 'id must be an integer.' });
+      return;
+    }
+
+    const existing = db.prepare('SELECT id FROM categories WHERE id = ?').get(id);
+    if (!existing) {
+      res.status(404).json({ error: 'Category not found.' });
+      return;
+    }
+
+    const { count } = db
+      .prepare('SELECT COUNT(*) AS count FROM transactions WHERE category_id = ?')
+      .get(id) as { count: number };
+
+    if (count > 0) {
+      res.status(409).json({ error: 'Cannot delete a category referenced by transactions.' });
+      return;
+    }
+
+    db.prepare('DELETE FROM categories WHERE id = ?').run(id);
+
+    res.status(204).send();
+  });
+
   app.get('/api/transactions', (req: Request, res: Response) => {
     const { from, to, category_id: categoryId } = req.query;
 
@@ -117,7 +325,7 @@ export function createApp(dbPath: string = DB_PATH): Express {
         res.status(400).json({ error: 'from must be a valid date string in yyyy-mm-dd format.' });
         return;
       }
-      clauses.push('date >= @from');
+      clauses.push('t.date >= @from');
       params.from = from;
     }
 
@@ -126,7 +334,7 @@ export function createApp(dbPath: string = DB_PATH): Express {
         res.status(400).json({ error: 'to must be a valid date string in yyyy-mm-dd format.' });
         return;
       }
-      clauses.push('date <= @to');
+      clauses.push('t.date <= @to');
       params.to = to;
     }
 
@@ -136,17 +344,16 @@ export function createApp(dbPath: string = DB_PATH): Express {
         res.status(400).json({ error: 'category_id must be an integer.' });
         return;
       }
-      clauses.push('category_id = @categoryId');
+      clauses.push('t.category_id = @categoryId');
       params.categoryId = parsedCategoryId;
     }
 
     const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
     const rows = db
       .prepare(
-        `SELECT id, date, amount_cents, payee, category_id, note, created_at
-         FROM transactions
+        `${TRANSACTION_SELECT}
          ${where}
-         ORDER BY date DESC, id DESC`,
+         ORDER BY t.date DESC, t.id DESC`,
       )
       .all(params) as TransactionRow[];
 
@@ -170,10 +377,7 @@ export function createApp(dbPath: string = DB_PATH): Express {
       .run({ date, amount_cents, payee, category_id, note });
 
     const created = db
-      .prepare(
-        `SELECT id, date, amount_cents, payee, category_id, note, created_at
-         FROM transactions WHERE id = ?`,
-      )
+      .prepare(`${TRANSACTION_SELECT} WHERE t.id = ?`)
       .get(result.lastInsertRowid) as TransactionRow;
 
     res.status(201).json(created);
@@ -207,12 +411,7 @@ export function createApp(dbPath: string = DB_PATH): Express {
        WHERE id = @id`,
     ).run({ id, date, amount_cents, payee, category_id, note });
 
-    const updated = db
-      .prepare(
-        `SELECT id, date, amount_cents, payee, category_id, note, created_at
-         FROM transactions WHERE id = ?`,
-      )
-      .get(id) as TransactionRow;
+    const updated = db.prepare(`${TRANSACTION_SELECT} WHERE t.id = ?`).get(id) as TransactionRow;
 
     res.json(updated);
   });
