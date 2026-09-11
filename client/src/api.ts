@@ -28,24 +28,6 @@ export async function fetchTransactions(): Promise<Transaction[]> {
   return response.json() as Promise<Transaction[]>;
 }
 
-/**
- * Builds the JSON-serializable request body for a create/update request,
- * omitting `category_id` entirely when no category is selected so the
- * server falls back to its default of `null`.
- */
-function buildTransactionBody(input: TransactionInput): Record<string, unknown> {
-  const body: Record<string, unknown> = {
-    date: input.date,
-    amount_cents: input.amount_cents,
-    payee: input.payee,
-    note: input.note,
-  };
-  if (input.category_id !== null) {
-    body.category_id = input.category_id;
-  }
-  return body;
-}
-
 /** Fetches the monthly income/expense summary for the given `yyyy-mm` month. */
 export async function fetchSummary(month: string): Promise<Summary> {
   const response = await fetch(`/api/summary?month=${encodeURIComponent(month)}`);
