@@ -57,3 +57,107 @@ td {
   font-size: 0.85rem;
   line-height: 1.4;
 }
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.stat-tiles {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat-tile {
+  flex: 1;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background: #f3f3f3;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.stat-tile-label {
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.stat-tile-value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-tile--neutral .stat-tile-value {
+  color: inherit;
+}
+
+.stat-tile--expense .stat-tile-value {
+  color: #c0392b;
+}
+
+.stat-tile--positive .stat-tile-value {
+  color: #1a7f37;
+}
+
+.stat-tile--negative .stat-tile-value {
+  color: #c0392b;
+}
+
+.category-bar-chart {
+  max-width: 500px;
+}
+
+.category-bar-label {
+  fill: #fff;
+  font-size: 12px;
+}
+
+.category-bar-amount {
+  fill: #222;
+  font-size: 12px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.budget-progress {
+  width: 100%;
+  min-width: 120px;
+  height: 0.75rem;
+  border-radius: 999px;
+  background: #e0e0e0;
+  overflow: hidden;
+}
+
+.budget-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.budget-progress-bar--green {
+  background: #1a7f37;
+}
+
+.budget-progress-bar--amber {
+  background: #ff9800;
+}
+
+.budget-progress-bar--red {
+  background: #c0392b;
+}
+
+.budget-progress-bar--none {
+  background: #bbb;
+}
