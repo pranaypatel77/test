@@ -1,4 +1,4 @@
-import type { Category, Transaction } from './types.js';
+import type { Category, Summary, Transaction } from './types.js';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
@@ -44,6 +44,15 @@ function buildTransactionBody(input: TransactionInput): Record<string, unknown> 
     body.category_id = input.category_id;
   }
   return body;
+}
+
+/** Fetches the monthly income/expense summary for the given `yyyy-mm` month. */
+export async function fetchSummary(month: string): Promise<Summary> {
+  const response = await fetch(`/api/summary?month=${encodeURIComponent(month)}`);
+  if (!response.ok) {
+    throw new Error('Failed to load summary.');
+  }
+  return response.json() as Promise<Summary>;
 }
 
 /** Creates a new transaction. */

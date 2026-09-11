@@ -18,3 +18,10 @@ export interface Transaction {
   note: string | null;
   created_at: string;
 }
+
+export interface Summary {
+  totalIncome: number;
+  totalExpenses: number;
+  net: number;
+  categoryTotals: Record<string, number>;
+}
