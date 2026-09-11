@@ -1,28 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import CategoryBarChart from '../components/CategoryBarChart.js';
+import MonthPicker from '../components/MonthPicker.js';
 import { fetchCategories, fetchSummary } from '../api.js';
+import { currentMonth } from '../dateUtils.js';
 import { formatCurrency } from '../format.js';
 import type { Category, Summary } from '../types.js';
-
-/** Returns the current calendar month as a `yyyy-mm` string. */
-function currentMonth(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-}
-
-/** Returns the `yyyy-mm` month that is `delta` months away from `month`. */
-function shiftMonth(month: string, delta: number): string {
-  const [year, monthNumber] = month.split('-').map(Number);
-  const date = new Date(year, monthNumber - 1 + delta, 1);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-}
-
-/** Renders a human-friendly label for a `yyyy-mm` month, e.g. `March 2024`. */
-function formatMonthLabel(month: string): string {
-  const [year, monthNumber] = month.split('-').map(Number);
-  const date = new Date(year, monthNumber - 1, 1);
-  return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-}
 
 export default function Dashboard() {
   const [month, setMonth] = useState(currentMonth());
@@ -57,28 +39,7 @@ export default function Dashboard() {
   return (
     <section>
       <h2>Dashboard</h2>
-      <div className="month-nav">
-        <button type="button" aria-label="Previous month" onClick={() => setMonth((current) => shiftMonth(current, -1))}>
-          &lt;
-        </button>
-        <label>
-          Month
-          <input
-            type="month"
-            aria-label="Month"
-            value={month}
-            onChange={(event) => {
-              if (event.target.value) {
-                setMonth(event.target.value);
-              }
-            }}
-          />
-        </label>
-        <button type="button" aria-label="Next month" onClick={() => setMonth((current) => shiftMonth(current, 1))}>
-          &gt;
-        </button>
-        <span>{formatMonthLabel(month)}</span>
-      </div>
+      <MonthPicker month={month} onChange={setMonth} />
 
       {error ? <p role="alert">{error}</p> : null}
 
