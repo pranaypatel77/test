@@ -3,6 +3,7 @@ import express, { type Express, type Request, type Response } from 'express';
 import { createDatabase, DB_PATH } from './db.js';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 const CATEGORY_KINDS = ['expense', 'income'] as const;
 
@@ -138,6 +139,22 @@ function isValidDate(value: unknown): value is string {
     date.getUTCMonth() === month - 1 &&
     date.getUTCDate() === day
   );
+}
+
+/**
+ * Returns true if `value` is a string in `yyyy-mm` format.
+ */
+function isValidMonth(value: unknown): value is string {
+  return typeof value === 'string' && MONTH_PATTERN.test(value);
+}
+
+/**
+ * Returns the current UTC month as a `yyyy-mm` string.
+ */
+function currentMonth(): string {
+  const now = new Date();
+  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+  return `${now.getUTCFullYear()}-${month}`;
 }
 
 /**
@@ -312,6 +329,50 @@ export function createApp(dbPath: string = DB_PATH): Express {
     db.prepare('DELETE FROM categories WHERE id = ?').run(id);
 
     res.status(204).send();
+  });
+
+  app.get('/api/summary', (req: Request, res: Response) => {
+    const { month } = req.query;
+    const requestedMonth = typeof month === 'string' ? month : currentMonth();
+
+    if (!isValidMonth(requestedMonth)) {
+      res.status(400).json({ error: 'month must be a valid date string in yyyy-mm format.' });
+      return;
+    }
+
+    const rows = db
+      .prepare(
+        `SELECT t.amount_cents, c.name AS category_name
+         FROM transactions t
+         LEFT JOIN categories c ON c.id = t.category_id
+         WHERE substr(t.date, 1, 7) = @month`,
+      )
+      .all({ month: requestedMonth }) as { amount_cents: number; category_name: string | null }[];
+
+    let totalIncome = 0;
+    let totalExpenses = 0;
+    const categoryTotals: Record<string, number> = {};
+
+    for (const row of rows) {
+      if (row.amount_cents >= 0) {
+        totalIncome += row.amount_cents;
+        continue;
+      }
+
+      const expenseAmount = -row.amount_cents;
+      totalExpenses += expenseAmount;
+
+      if (row.category_name) {
+        categoryTotals[row.category_name] = (categoryTotals[row.category_name] ?? 0) + expenseAmount;
+      }
+    }
+
+    res.json({
+      totalIncome,
+      totalExpenses,
+      net: totalIncome - totalExpenses,
+      categoryTotals,
+    });
   });
 
   app.get('/api/transactions', (req: Request, res: Response) => {
