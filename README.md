@@ -68,6 +68,44 @@ Run ESLint for both packages:
 npm run lint
 ```
 
+## End-to-end tests
+
+A Playwright smoke test at the repo root exercises the full user journey:
+create a transaction, verify it shows up on the Transactions page, set a
+budget limit for its category on the Budgets page, and confirm the Dashboard
+shows the updated expense total and a colored category bar.
+
+Run it locally with:
+
+```
+npx playwright install chromium   # one-time browser download
+npm run e2e
+```
+
+`npm run e2e` (`scripts/e2e-runner.mjs`) takes care of everything without any
+manual steps:
+
+1. Creates a temporary SQLite database in the OS temp directory.
+2. Starts the API server on port `4000` against that temporary database.
+3. Starts the Vite client dev server on port `5173`.
+4. Runs the Playwright spec in `e2e/` against Chromium only.
+5. Shuts down both dev servers and deletes the temporary database, whether
+   the test passed or failed, so the repository is left clean.
+
+The e2e spec runs Chromium only and should complete in well under 30 seconds.
+
+### CI
+
+`ci/github-workflows/e2e.yml` runs lint, the vitest unit tests, and the
+Playwright e2e suite, in that order, on every push, failing the build if any
+step fails. It currently lives outside `.github/workflows/` because the
+automation that authored it isn't permitted to write there; a maintainer
+needs to move it into place once, e.g.:
+
+```
+git mv ci/github-workflows/e2e.yml .github/workflows/e2e.yml
+```
+
 ## Notes
 
 - On first boot, the server creates `server/data/ledger.db` (and the
