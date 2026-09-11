@@ -227,3 +227,43 @@ th {
   fill: #222;
   font-size: 12px;
 }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.budget-progress {
+  width: 100%;
+  min-width: 120px;
+  height: 0.75rem;
+  border-radius: 999px;
+  background: #e0e0e0;
+  overflow: hidden;
+}
+
+.budget-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.budget-progress-bar--green {
+  background: #1a7f37;
+}
+
+.budget-progress-bar--amber {
+  background: #ff9800;
+}
+
+.budget-progress-bar--red {
+  background: #c0392b;
+}
+
+.budget-progress-bar--none {
+  background: #bbb;
+}
