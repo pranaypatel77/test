@@ -42,6 +42,19 @@ interface CategoryInput {
   kind: CategoryKind;
 }
 
+interface BudgetStatusRow {
+  category_id: number;
+  category_name: string;
+  category_color: string;
+  month: string;
+  limit_cents: number | null;
+  amount_spent_cents: number;
+}
+
+interface BudgetInput {
+  limit_cents: number;
+}
+
 const TRANSACTION_SELECT = `
   SELECT t.id, t.date, t.amount_cents, t.payee, t.category_id,
          c.name AS category_name, c.color AS category_color,
@@ -155,6 +168,26 @@ function currentMonth(): string {
   const now = new Date();
   const month = String(now.getUTCMonth() + 1).padStart(2, '0');
   return `${now.getUTCFullYear()}-${month}`;
+}
+
+/**
+ * Validates a budget upsert payload, requiring a positive integer
+ * `limit_cents`.
+ */
+function parseBudgetInput(
+  body: unknown,
+): { ok: true; value: BudgetInput } | { ok: false; error: string } {
+  if (typeof body !== 'object' || body === null) {
+    return { ok: false, error: 'Request body must be a JSON object.' };
+  }
+
+  const { limit_cents } = body as Record<string, unknown>;
+
+  if (typeof limit_cents !== 'number' || !Number.isInteger(limit_cents) || limit_cents <= 0) {
+    return { ok: false, error: 'limit_cents must be a positive integer.' };
+  }
+
+  return { ok: true, value: { limit_cents } };
 }
 
 /**
@@ -373,6 +406,102 @@ export function createApp(dbPath: string = DB_PATH): Express {
       net: totalIncome - totalExpenses,
       categoryTotals,
     });
+  });
+
+  app.get('/api/budgets', (req: Request, res: Response) => {
+    const { month } = req.query;
+    const requestedMonth = typeof month === 'string' ? month : currentMonth();
+
+    if (!isValidMonth(requestedMonth)) {
+      res.status(400).json({ error: 'month must be a valid date string in yyyy-mm format.' });
+      return;
+    }
+
+    const categories = db
+      .prepare(`SELECT id, name, color FROM categories WHERE kind = 'expense' ORDER BY name ASC`)
+      .all() as { id: number; name: string; color: string }[];
+
+    const budgetRows = db
+      .prepare('SELECT category_id, limit_cents FROM budgets WHERE month = @month')
+      .all({ month: requestedMonth }) as { category_id: number; limit_cents: number }[];
+    const limitsByCategory = new Map(budgetRows.map((row) => [row.category_id, row.limit_cents]));
+
+    const spentRows = db
+      .prepare(
+        `SELECT category_id, SUM(-amount_cents) AS amount_spent_cents
+         FROM transactions
+         WHERE amount_cents < 0 AND category_id IS NOT NULL AND substr(date, 1, 7) = @month
+         GROUP BY category_id`,
+      )
+      .all({ month: requestedMonth }) as { category_id: number; amount_spent_cents: number }[];
+    const spentByCategory = new Map(spentRows.map((row) => [row.category_id, row.amount_spent_cents]));
+
+    const result: BudgetStatusRow[] = categories.map((category) => ({
+      category_id: category.id,
+      category_name: category.name,
+      category_color: category.color,
+      month: requestedMonth,
+      limit_cents: limitsByCategory.get(category.id) ?? null,
+      amount_spent_cents: spentByCategory.get(category.id) ?? 0,
+    }));
+
+    res.json(result);
+  });
+
+  app.put('/api/budgets/:categoryId', (req: Request, res: Response) => {
+    const categoryId = Number(req.params.categoryId);
+    if (!Number.isInteger(categoryId)) {
+      res.status(400).json({ error: 'categoryId must be an integer.' });
+      return;
+    }
+
+    const { month } = req.query;
+    const requestedMonth = typeof month === 'string' ? month : currentMonth();
+    if (!isValidMonth(requestedMonth)) {
+      res.status(400).json({ error: 'month must be a valid date string in yyyy-mm format.' });
+      return;
+    }
+
+    const category = db
+      .prepare('SELECT id, name, color FROM categories WHERE id = ?')
+      .get(categoryId) as { id: number; name: string; color: string } | undefined;
+    if (!category) {
+      res.status(404).json({ error: 'Category not found.' });
+      return;
+    }
+
+    const parsed = parseBudgetInput(req.body);
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+
+    const { limit_cents } = parsed.value;
+
+    db.prepare(
+      `INSERT INTO budgets (category_id, month, limit_cents)
+       VALUES (@category_id, @month, @limit_cents)
+       ON CONFLICT (category_id, month) DO UPDATE SET limit_cents = @limit_cents`,
+    ).run({ category_id: categoryId, month: requestedMonth, limit_cents });
+
+    const { amount_spent_cents: amountSpentCents } = db
+      .prepare(
+        `SELECT COALESCE(SUM(-amount_cents), 0) AS amount_spent_cents
+         FROM transactions
+         WHERE amount_cents < 0 AND category_id = @category_id AND substr(date, 1, 7) = @month`,
+      )
+      .get({ category_id: categoryId, month: requestedMonth }) as { amount_spent_cents: number };
+
+    const result: BudgetStatusRow = {
+      category_id: category.id,
+      category_name: category.name,
+      category_color: category.color,
+      month: requestedMonth,
+      limit_cents,
+      amount_spent_cents: amountSpentCents,
+    };
+
+    res.json(result);
   });
 
   app.get('/api/transactions', (req: Request, res: Response) => {
