@@ -220,7 +220,7 @@ th {
 }
 
 .category-bar-label {
-  fill: #fff;
+  fill: var(--accent-contrast);
   font-size: 12px;
 }
 
@@ -243,7 +243,7 @@ th {
   min-width: 120px;
   height: 0.75rem;
   border-radius: 999px;
-  background-color: var(--bg-elevated);
+  background: var(--bg-elevated);
   overflow: hidden;
 }
 
@@ -254,7 +254,7 @@ th {
 }
 
 .budget-progress-bar--green {
-  background-color: var(--positive);
+  background: var(--positive);
 }
 
 .budget-progress-bar--amber {
@@ -262,7 +262,7 @@ th {
 }
 
 .budget-progress-bar--red {
-  background-color: var(--negative);
+  background: var(--negative);
 }
 
 .budget-progress-bar--none {
