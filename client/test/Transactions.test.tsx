@@ -53,7 +53,10 @@ describe('Transactions page', () => {
   });
 
   it('renders fetched transactions sorted newest first with formatted, color-coded amounts', async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(jsonResponse(sampleTransactions));
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    // The page loads categories and transactions in parallel on mount.
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    fetchMock.mockResolvedValueOnce(jsonResponse(sampleTransactions));
 
     render(<Transactions />);
 
@@ -77,6 +80,8 @@ describe('Transactions page', () => {
 
   it('submits the add-transaction form and prepends the created row', async () => {
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    // Initial parallel load: categories, then transactions.
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
     fetchMock.mockResolvedValueOnce(jsonResponse([]));
 
     render(<Transactions />);
@@ -92,6 +97,9 @@ describe('Transactions page', () => {
       created_at: '2024-07-04T00:00:00.000Z',
     };
     fetchMock.mockResolvedValueOnce(jsonResponse(created, 201));
+    // Reload after create: categories, then transactions.
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    fetchMock.mockResolvedValueOnce(jsonResponse([created]));
 
     fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2024-07-04' } });
     fireEvent.change(screen.getByLabelText('Payee'), { target: { value: 'Bookstore' } });
@@ -102,7 +110,8 @@ describe('Transactions page', () => {
 
     await screen.findByText('Bookstore');
 
-    expect(fetchMock).toHaveBeenLastCalledWith(
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
       '/api/transactions',
       expect.objectContaining({
         method: 'POST',
@@ -110,6 +119,7 @@ describe('Transactions page', () => {
           date: '2024-07-04',
           amount_cents: 4599,
           payee: 'Bookstore',
+          category_id: null,
           note: 'New novel',
         }),
       }),
@@ -195,5 +205,65 @@ describe('Transactions page', () => {
     expect(window.confirm).toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(screen.getByText('Coffee Shop')).toBeInTheDocument();
+  });
+
+  it('imports a CSV file, shows the result banner, and refreshes the table', async () => {
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    // Initial parallel load: categories, then transactions.
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+
+    render(<Transactions />);
+    await screen.findByText(/no transactions yet/i);
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        imported: 1,
+        skipped: [{ line: 3, reason: 'Invalid amount "oops".' }],
+      }),
+    );
+    // Reload after import: categories, then transactions.
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
+
+    const file = new File(
+      ['date,amount,payee,note\n2024-06-01,15.00,Coffee Shop,Morning latte\n2024-06-02,oops,Bad Row,Note'],
+      'transactions.csv',
+      { type: 'text/csv' },
+    );
+
+    fireEvent.change(screen.getByLabelText('CSV file'), { target: { files: [file] } });
+
+    await screen.findByText(/imported 1 transaction, skipped 1\./i);
+    expect(screen.getByText(/line 3: invalid amount "oops"\./i)).toBeInTheDocument();
+    await screen.findByText('Coffee Shop');
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      '/api/transactions/import',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'text/csv' },
+      }),
+    );
+  });
+
+  it('shows an error and does not refresh when the import request fails', async () => {
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    // Initial parallel load: categories, then transactions.
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+
+    render(<Transactions />);
+    await screen.findByText(/no transactions yet/i);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'boom' }, 500));
+
+    const file = new File(['date,amount,payee,note'], 'transactions.csv', { type: 'text/csv' });
+    fireEvent.change(screen.getByLabelText('CSV file'), { target: { files: [file] } });
+
+    expect(await screen.findByText('Failed to import transactions.')).toBeInTheDocument();
+    // Two initial load calls plus the failed import call; no reload happens.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });

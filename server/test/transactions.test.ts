@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import Database from 'better-sqlite3';
 import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createApp } from '../src/app.js';
@@ -301,6 +302,218 @@ describe('/api/transactions', () => {
 
       expect(response.status).toBe(404);
       expect(response.body).toHaveProperty('error');
+    });
+  });
+
+  describe('POST /api/transactions/import', () => {
+    it('imports all valid rows from a CSV with a header row', async () => {
+      const app = createApp(tempDbPath());
+      const csv = [
+        'date,amount,payee,note',
+        '2024-03-15,10.50,Coffee Shop,Morning latte',
+        '2024-03-16,-5.00,Bus Fare,Commute',
+      ].join('\n');
+
+      const response = await request(app)
+        .post('/api/transactions/import')
+        .set('Content-Type', 'text/csv')
+        .send(csv);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ imported: 2, skipped: [] });
+
+      const list = await request(app).get('/api/transactions');
+      expect(list.body).toHaveLength(2);
+      expect(list.body.map((t: { amount_cents: number }) => t.amount_cents).sort()).toEqual([
+        -500, 1050,
+      ]);
+    });
+
+    it('imports rows without a header, assuming date,amount,payee,note order', async () => {
+      const app = createApp(tempDbPath());
+      const csv = '2024-05-01,20,Grocery Store,Weekly shop';
+
+      const response = await request(app)
+        .post('/api/transactions/import')
+        .set('Content-Type', 'text/csv')
+        .send(csv);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ imported: 1, skipped: [] });
+
+      const list = await request(app).get('/api/transactions');
+      expect(list.body[0]).toMatchObject({
+        date: '2024-05-01',
+        amount_cents: 2000,
+        payee: 'Grocery Store',
+        note: 'Weekly shop',
+      });
+    });
+
+    it('handles quoted fields containing commas', async () => {
+      const app = createApp(tempDbPath());
+      const csv = [
+        'date,amount,payee,note',
+        '2024-03-15,12.00,"Smith, Jones & Co.","Invoice #42, paid in full"',
+      ].join('\n');
+
+      const response = await request(app)
+        .post('/api/transactions/import')
+        .set('Content-Type', 'text/csv')
+        .send(csv);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ imported: 1, skipped: [] });
+
+      const list = await request(app).get('/api/transactions');
+      expect(list.body[0]).toMatchObject({
+        payee: 'Smith, Jones & Co.',
+        note: 'Invoice #42, paid in full',
+      });
+    });
+
+    it('ignores blank lines', async () => {
+      const app = createApp(tempDbPath());
+      const csv = [
+        'date,amount,payee,note',
+        '',
+        '2024-03-15,10.00,Coffee Shop,Latte',
+        '   ',
+        '2024-03-16,20.00,Book Store,Novel',
+      ].join('\n');
+
+      const response = await request(app)
+        .post('/api/transactions/import')
+        .set('Content-Type', 'text/csv')
+        .send(csv);
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ imported: 2, skipped: [] });
+    });
+
+    it('skips malformed rows with the wrong number of columns and reports the line number', async () => {
+      const app = createApp(tempDbPath());
+      const csv = [
+        'date,amount,payee,note',
+        '2024-03-15,10.00,Coffee Shop,Latte',
+        '2024-03-16,20.00,Book Store',
+      ].join('\n');
+
+      const response = await request(app)
+        .post('/api/transactions/import')
+        .set('Content-Type', 'text/csv')
+        .send(csv);
+
+      expect(response.status).toBe(200);
+      expect(response.body.imported).toBe(1);
+      expect(response.body.skipped).toEqual([
+        { line: 3, reason: expect.stringContaining('Malformed row') },
+      ]);
+    });
+
+    it('skips rows with an invalid date and reports the reason', async () => {
+      const app = createApp(tempDbPath());
+      const csv = [
+        'date,amount,payee,note',
+        '03/15/2024,10.00,Coffee Shop,Latte',
+      ].join('\n');
+
+      const response = await request(app)
+        .post('/api/transactions/import')
+        .set('Content-Type', 'text/csv')
+        .send(csv);
+
+      expect(response.status).toBe(200);
+      expect(response.body.imported).toBe(0);
+      expect(response.body.skipped).toEqual([
+        { line: 2, reason: expect.stringContaining('Invalid date') },
+      ]);
+    });
+
+    it('skips rows with a non-numeric amount and reports the reason', async () => {
+      const app = createApp(tempDbPath());
+      const csv = [
+        'date,amount,payee,note',
+        '2024-03-15,not-a-number,Coffee Shop,Latte',
+      ].join('\n');
+
+      const response = await request(app)
+        .post('/api/transactions/import')
+        .set('Content-Type', 'text/csv')
+        .send(csv);
+
+      expect(response.status).toBe(200);
+      expect(response.body.skipped).toEqual([
+        { line: 2, reason: expect.stringContaining('Invalid amount') },
+      ]);
+    });
+
+    it('skips rows with an empty payee or note', async () => {
+      const app = createApp(tempDbPath());
+      const csv = [
+        'date,amount,payee,note',
+        '2024-03-15,10.00,,Latte',
+        '2024-03-16,20.00,Book Store,',
+      ].join('\n');
+
+      const response = await request(app)
+        .post('/api/transactions/import')
+        .set('Content-Type', 'text/csv')
+        .send(csv);
+
+      expect(response.status).toBe(200);
+      expect(response.body.imported).toBe(0);
+      expect(response.body.skipped).toHaveLength(2);
+      expect(response.body.skipped[0]).toMatchObject({ line: 2 });
+      expect(response.body.skipped[1]).toMatchObject({ line: 3 });
+    });
+
+    it('does not persist any rows if the insert transaction fails partway through', async () => {
+      const dbPath = tempDbPath();
+      const app = createApp(dbPath);
+
+      // Prime the database file/schema by making an unrelated request, then
+      // attach a trigger (via a second connection to the same file) that
+      // rejects a specific payee, simulating a DB-level failure partway
+      // through a batch insert.
+      await request(app).get('/api/transactions');
+      const sideConnection = new Database(dbPath);
+      sideConnection.exec(`
+        CREATE TRIGGER reject_bad_payee BEFORE INSERT ON transactions
+        WHEN NEW.payee = 'FAIL_TRIGGER'
+        BEGIN
+          SELECT RAISE(FAIL, 'simulated insert failure');
+        END;
+      `);
+      sideConnection.close();
+
+      const csv = [
+        'date,amount,payee,note',
+        '2024-03-15,10.00,Coffee Shop,Latte',
+        '2024-03-16,20.00,FAIL_TRIGGER,Novel',
+      ].join('\n');
+
+      const response = await request(app)
+        .post('/api/transactions/import')
+        .set('Content-Type', 'text/csv')
+        .send(csv);
+
+      expect(response.status).toBe(500);
+
+      const list = await request(app).get('/api/transactions');
+      expect(list.body).toHaveLength(0);
+    });
+
+    it('returns imported 0 and skipped empty for an empty body', async () => {
+      const app = createApp(tempDbPath());
+
+      const response = await request(app)
+        .post('/api/transactions/import')
+        .set('Content-Type', 'text/csv')
+        .send('');
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ imported: 0, skipped: [] });
     });
   });
 });

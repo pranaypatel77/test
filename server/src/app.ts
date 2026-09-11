@@ -189,6 +189,169 @@ function parseTransactionInput(
   };
 }
 
+const CSV_COLUMNS = ['date', 'amount', 'payee', 'note'] as const;
+type CsvColumn = (typeof CSV_COLUMNS)[number];
+
+const AMOUNT_PATTERN = /^-?\d+(\.\d+)?$/;
+
+interface CsvImportSkip {
+  line: number;
+  reason: string;
+}
+
+/**
+ * Splits a single CSV line into fields, honoring double-quoted values that
+ * may themselves contain commas and escaped (`""`) quotes. Returns `null`
+ * if the line has an unterminated quoted field.
+ */
+function splitCsvLine(line: string): string[] | null {
+  const fields: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = true;
+    } else if (char === ',') {
+      fields.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  if (inQuotes) {
+    return null;
+  }
+
+  fields.push(current);
+  return fields;
+}
+
+/**
+ * Validates and normalizes the raw string values of a single CSV row into
+ * transaction input, returning either the normalized fields or a
+ * human-readable reason the row should be skipped.
+ */
+function parseCsvRow(
+  values: Record<CsvColumn, string>,
+): { ok: true; value: TransactionInput } | { ok: false; error: string } {
+  const date = values.date.trim();
+  const amountText = values.amount.trim();
+  const payee = values.payee.trim();
+  const note = values.note.trim();
+
+  if (!isValidDate(date)) {
+    return { ok: false, error: `Invalid date "${values.date}"; expected yyyy-mm-dd.` };
+  }
+
+  if (!AMOUNT_PATTERN.test(amountText)) {
+    return { ok: false, error: `Invalid amount "${values.amount}".` };
+  }
+
+  if (payee.length === 0) {
+    return { ok: false, error: 'payee must not be empty.' };
+  }
+
+  if (note.length === 0) {
+    return { ok: false, error: 'note must not be empty.' };
+  }
+
+  const amount_cents = Math.round(Number(amountText) * 100);
+
+  return {
+    ok: true,
+    value: { date, amount_cents, payee, category_id: null, note },
+  };
+}
+
+/**
+ * Parses a raw CSV document into valid transaction inputs and a list of
+ * skipped rows with their 1-indexed line numbers and reasons. Blank lines
+ * are ignored. If the first non-blank line's fields match the expected
+ * column names (case-insensitively, in any order) it is treated as a
+ * header and used to determine column order; otherwise columns are assumed
+ * to be in `date, amount, payee, note` order. No external CSV library is
+ * used.
+ */
+function parseTransactionsCsv(text: string): {
+  rows: TransactionInput[];
+  skipped: CsvImportSkip[];
+} {
+  const lines = text.split(/\r\n|\r|\n/);
+  const rows: TransactionInput[] = [];
+  const skipped: CsvImportSkip[] = [];
+
+  let columnOrder: CsvColumn[] = [...CSV_COLUMNS];
+  let headerChecked = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const lineNumber = i + 1;
+    const rawLine = lines[i];
+
+    if (rawLine.trim().length === 0) {
+      continue;
+    }
+
+    const fields = splitCsvLine(rawLine);
+    if (fields === null) {
+      skipped.push({ line: lineNumber, reason: 'Malformed row: unterminated quoted field.' });
+      continue;
+    }
+
+    if (!headerChecked) {
+      headerChecked = true;
+      const normalized = fields.map((field) => field.trim().toLowerCase());
+      const isHeader =
+        normalized.length === CSV_COLUMNS.length &&
+        CSV_COLUMNS.every((column) => normalized.includes(column));
+      if (isHeader) {
+        columnOrder = normalized as CsvColumn[];
+        continue;
+      }
+    }
+
+    if (fields.length !== columnOrder.length) {
+      skipped.push({
+        line: lineNumber,
+        reason: `Malformed row: expected ${columnOrder.length} columns, found ${fields.length}.`,
+      });
+      continue;
+    }
+
+    const values = {} as Record<CsvColumn, string>;
+    columnOrder.forEach((column, index) => {
+      values[column] = fields[index];
+    });
+
+    const parsed = parseCsvRow(values);
+    if (!parsed.ok) {
+      skipped.push({ line: lineNumber, reason: parsed.error });
+      continue;
+    }
+
+    rows.push(parsed.value);
+  }
+
+  return { rows, skipped };
+}
+
 /**
  * Builds an Express application instance. Kept separate from `index.ts` so
  * tests can exercise the app without binding to a network port.
@@ -431,6 +594,42 @@ export function createApp(dbPath: string = DB_PATH): Express {
 
     res.status(204).send();
   });
+
+  app.post(
+    '/api/transactions/import',
+    express.text({ type: '*/*', limit: '5mb' }),
+    (req: Request, res: Response) => {
+      const csvText = typeof req.body === 'string' ? req.body : '';
+      const { rows, skipped } = parseTransactionsCsv(csvText);
+
+      let imported = 0;
+
+      if (rows.length > 0) {
+        const insert = db.prepare(
+          `INSERT INTO transactions (date, amount_cents, payee, category_id, note)
+           VALUES (@date, @amount_cents, @payee, @category_id, @note)`,
+        );
+
+        // Insert every valid row inside a single transaction so that a
+        // failure partway through leaves the database untouched.
+        const insertAll = db.transaction((transactionsToInsert: TransactionInput[]) => {
+          for (const transaction of transactionsToInsert) {
+            insert.run(transaction);
+          }
+        });
+
+        try {
+          insertAll(rows);
+          imported = rows.length;
+        } catch {
+          res.status(500).json({ error: 'Failed to import transactions.' });
+          return;
+        }
+      }
+
+      res.json({ imported, skipped });
+    },
+  );
 
   return app;
 }
