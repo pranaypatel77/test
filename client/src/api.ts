@@ -1,4 +1,4 @@
-import type { Category, Summary, Transaction } from './types.js';
+import type { BudgetStatus, Category, Summary, Transaction } from './types.js';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
@@ -35,6 +35,32 @@ export async function fetchSummary(month: string): Promise<Summary> {
     throw new Error('Failed to load summary.');
   }
   return response.json() as Promise<Summary>;
+}
+
+/** Fetches the budget status (limit and amount spent) for every expense category for the given `yyyy-mm` month. */
+export async function fetchBudgets(month: string): Promise<BudgetStatus[]> {
+  const response = await fetch(`/api/budgets?month=${encodeURIComponent(month)}`);
+  if (!response.ok) {
+    throw new Error('Failed to load budgets.');
+  }
+  return response.json() as Promise<BudgetStatus[]>;
+}
+
+/** Upserts the spending limit for a category in the given `yyyy-mm` month. */
+export async function updateBudget(
+  categoryId: number,
+  month: string,
+  limitCents: number,
+): Promise<BudgetStatus> {
+  const response = await fetch(`/api/budgets/${categoryId}?month=${encodeURIComponent(month)}`, {
+    method: 'PUT',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ limit_cents: limitCents }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to update budget.');
+  }
+  return response.json() as Promise<BudgetStatus>;
 }
 
 /** Creates a new transaction. */
