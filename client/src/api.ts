@@ -40,3 +40,40 @@ export async function createTransaction(input: TransactionInput): Promise<Transa
   }
   return response.json() as Promise<Transaction>;
 }
+
+export interface ImportSkippedRow {
+  line: number;
+  reason: string;
+}
+
+export interface ImportResult {
+  imported: number;
+  skipped: ImportSkippedRow[];
+}
+
+/**
+ * Reads a File's contents as text. Uses `FileReader` rather than the
+ * `File#text()` method for broader compatibility across environments.
+ */
+function readFileAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read file.'));
+    reader.readAsText(file);
+  });
+}
+
+/** Uploads a CSV file to bulk-import transactions. */
+export async function importTransactionsCsv(file: File): Promise<ImportResult> {
+  const csvText = await readFileAsText(file);
+  const response = await fetch('/api/transactions/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/csv' },
+    body: csvText,
+  });
+  if (!response.ok) {
+    throw new Error('Failed to import transactions.');
+  }
+  return response.json() as Promise<ImportResult>;
+}

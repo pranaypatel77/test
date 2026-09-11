@@ -196,4 +196,57 @@ describe('Transactions page', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(screen.getByText('Coffee Shop')).toBeInTheDocument();
   });
+
+  it('imports a CSV file, shows the result banner, and refreshes the table', async () => {
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+
+    render(<Transactions />);
+    await screen.findByText(/no transactions yet/i);
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        imported: 1,
+        skipped: [{ line: 3, reason: 'Invalid amount "oops".' }],
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
+
+    const file = new File(
+      ['date,amount,payee,note\n2024-06-01,15.00,Coffee Shop,Morning latte\n2024-06-02,oops,Bad Row,Note'],
+      'transactions.csv',
+      { type: 'text/csv' },
+    );
+
+    fireEvent.change(screen.getByLabelText('CSV file'), { target: { files: [file] } });
+
+    await screen.findByText(/imported 1 transaction, skipped 1\./i);
+    expect(screen.getByText(/line 3: invalid amount "oops"\./i)).toBeInTheDocument();
+    await screen.findByText('Coffee Shop');
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/transactions/import',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'text/csv' },
+      }),
+    );
+  });
+
+  it('shows an error and does not refresh when the import request fails', async () => {
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+
+    render(<Transactions />);
+    await screen.findByText(/no transactions yet/i);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'boom' }, 500));
+
+    const file = new File(['date,amount,payee,note'], 'transactions.csv', { type: 'text/csv' });
+    fireEvent.change(screen.getByLabelText('CSV file'), { target: { files: [file] } });
+
+    expect(await screen.findByText('Failed to import transactions.')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
