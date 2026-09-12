@@ -9,6 +9,13 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
+      - 'builder/**'
+  pull_request:
+    branches:
+      - main
+      - 'builder/**'
 
 jobs:
   build-and-test:
