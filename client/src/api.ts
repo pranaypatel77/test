@@ -86,34 +86,10 @@ export async function createTransaction(input: TransactionInput): Promise<Transa
   const response = await fetch('/api/transactions', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify(buildTransactionBody(input)),
+    body: JSON.stringify(input),
   });
   if (!response.ok) {
     throw new Error('Failed to create transaction.');
   }
   return response.json() as Promise<Transaction>;
-}
-
-/** Updates an existing transaction. */
-export async function updateTransaction(
-  id: number,
-  input: TransactionInput,
-): Promise<Transaction> {
-  const response = await fetch(`/api/transactions/${id}`, {
-    method: 'PUT',
-    headers: JSON_HEADERS,
-    body: JSON.stringify(buildTransactionBody(input)),
-  });
-  if (!response.ok) {
-    throw new Error('Failed to update transaction.');
-  }
-  return response.json() as Promise<Transaction>;
-}
-
-/** Deletes a transaction. */
-export async function deleteTransaction(id: number): Promise<void> {
-  const response = await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
-  if (!response.ok) {
-    throw new Error('Failed to delete transaction.');
-  }
 }
