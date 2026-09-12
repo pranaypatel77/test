@@ -132,6 +132,8 @@ describe('Transactions page', () => {
 
   it('edits a transaction inline via PUT and updates the row', async () => {
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    // Initial parallel load: categories, then transactions.
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
     fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
 
     render(<Transactions />);
@@ -159,6 +161,8 @@ describe('Transactions page', () => {
 
   it('cancels an inline edit without calling the API', async () => {
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    // Initial parallel load: categories, then transactions.
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
     fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
 
     render(<Transactions />);
@@ -170,11 +174,13 @@ describe('Transactions page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(screen.queryByRole('form', { name: /edit transaction/i })).not.toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('deletes a transaction after confirmation', async () => {
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    // Initial parallel load: categories, then transactions.
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
     fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
     vi.spyOn(window, 'confirm').mockReturnValue(true);
 
@@ -194,6 +200,8 @@ describe('Transactions page', () => {
 
   it('keeps the row when the delete confirmation is dismissed', async () => {
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    // Initial parallel load: categories, then transactions.
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
     fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
     vi.spyOn(window, 'confirm').mockReturnValue(false);
 
@@ -203,7 +211,7 @@ describe('Transactions page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
     expect(window.confirm).toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(screen.getByText('Coffee Shop')).toBeInTheDocument();
   });
 
