@@ -10,6 +10,8 @@ function jsonResponse(body: unknown, status = 200) {
   };
 }
 
+const sampleCategories = [{ id: 3, name: 'Dining', color: '#9c27b0', kind: 'expense' }];
+
 const sampleTransactions = [
   {
     id: 2,
@@ -31,6 +33,16 @@ const sampleTransactions = [
   },
 ];
 
+/**
+ * Queues the two fetch responses issued on mount: the page loads categories
+ * and transactions concurrently (categories first), so both must be mocked
+ * before rendering.
+ */
+function mockInitialLoad(fetchMock: ReturnType<typeof vi.fn>, transactions: unknown) {
+  fetchMock.mockResolvedValueOnce(jsonResponse(sampleCategories));
+  fetchMock.mockResolvedValueOnce(jsonResponse(transactions));
+}
+
 describe('Transactions page', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
@@ -42,7 +54,8 @@ describe('Transactions page', () => {
   });
 
   it('shows an empty state when the API returns no transactions', async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(jsonResponse([]));
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    mockInitialLoad(fetchMock, []);
 
     render(<Transactions />);
 
@@ -53,7 +66,8 @@ describe('Transactions page', () => {
   });
 
   it('renders fetched transactions sorted newest first with formatted, color-coded amounts', async () => {
-    (fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(jsonResponse(sampleTransactions));
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    mockInitialLoad(fetchMock, sampleTransactions);
 
     render(<Transactions />);
 
@@ -77,7 +91,7 @@ describe('Transactions page', () => {
 
   it('submits the add-transaction form and prepends the created row', async () => {
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
-    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    mockInitialLoad(fetchMock, []);
 
     render(<Transactions />);
     await screen.findByText(/no transactions yet/i);
@@ -122,7 +136,7 @@ describe('Transactions page', () => {
 
   it('edits a transaction inline via PUT and updates the row', async () => {
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
-    fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
+    mockInitialLoad(fetchMock, [sampleTransactions[0]]);
 
     render(<Transactions />);
     await screen.findByText('Coffee Shop');
@@ -149,7 +163,7 @@ describe('Transactions page', () => {
 
   it('cancels an inline edit without calling the API', async () => {
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
-    fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
+    mockInitialLoad(fetchMock, [sampleTransactions[0]]);
 
     render(<Transactions />);
     await screen.findByText('Coffee Shop');
@@ -160,12 +174,13 @@ describe('Transactions page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     expect(screen.queryByRole('form', { name: /edit transaction/i })).not.toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Only the two initial loads (categories + transactions) should have fired.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('deletes a transaction after confirmation', async () => {
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
-    fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
+    mockInitialLoad(fetchMock, [sampleTransactions[0]]);
     vi.spyOn(window, 'confirm').mockReturnValue(true);
 
     render(<Transactions />);
@@ -184,7 +199,7 @@ describe('Transactions page', () => {
 
   it('keeps the row when the delete confirmation is dismissed', async () => {
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
-    fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
+    mockInitialLoad(fetchMock, [sampleTransactions[0]]);
     vi.spyOn(window, 'confirm').mockReturnValue(false);
 
     render(<Transactions />);
@@ -193,7 +208,8 @@ describe('Transactions page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
 
     expect(window.confirm).toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // Only the two initial loads (categories + transactions) should have fired.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(screen.getByText('Coffee Shop')).toBeInTheDocument();
   });
 });
