@@ -6,7 +6,11 @@ interface TransactionTableProps {
 }
 
 function formatAmount(amountCents: number): string {
-  return (amountCents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  const formatted = (Math.abs(amountCents) / 100).toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+  });
+  return amountCents < 0 ? `-${formatted}` : formatted;
 }
 
 /** A table of transactions, including a colored chip for each one's category. */
@@ -34,9 +38,19 @@ export default function TransactionTable({ transactions }: TransactionTableProps
             <td>
               {transaction.category_name && transaction.category_color ? (
                 <CategoryChip name={transaction.category_name} color={transaction.category_color} />
-              ) : null}
+              ) : (
+                'Uncategorized'
+              )}
             </td>
-            <td>{formatAmount(transaction.amount_cents)}</td>
+            <td
+              className={
+                transaction.amount_cents < 0
+                  ? 'transactions-amount transactions-amount--expense'
+                  : 'transactions-amount transactions-amount--income'
+              }
+            >
+              {formatAmount(transaction.amount_cents)}
+            </td>
             <td>{transaction.note}</td>
           </tr>
         ))}
