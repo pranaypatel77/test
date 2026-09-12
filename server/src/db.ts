@@ -52,6 +52,14 @@ function migrate(db: Database.Database): void {
       note TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS budgets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      category_id INTEGER NOT NULL REFERENCES categories(id),
+      month TEXT NOT NULL,
+      limit_cents INTEGER NOT NULL,
+      UNIQUE (category_id, month)
+    );
   `);
 
   seedCategories(db);

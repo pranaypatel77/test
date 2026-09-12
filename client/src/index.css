@@ -164,43 +164,107 @@ th {
   line-height: 1.4;
 }
 
-.dashboard-summary {
+.month-nav {
   display: flex;
-  gap: 1.5rem;
-  margin: 0 0 1.5rem;
-  padding: 1rem;
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
-.dashboard-summary > div {
+.stat-tiles {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat-tile {
+  flex: 1;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
 }
 
-.dashboard-summary dt {
+.stat-tile-label {
+  font-size: 0.85rem;
   color: var(--text-secondary);
-  font-size: 0.85rem;
 }
 
-.dashboard-summary dd {
-  margin: 0;
-  font-size: 1.25rem;
+.stat-tile-value {
+  font-size: 1.5rem;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
-.spending-chart {
-  max-width: 480px;
+.stat-tile--neutral .stat-tile-value {
+  color: inherit;
 }
 
-.spending-chart-label,
-.spending-chart-value {
+.stat-tile--expense .stat-tile-value {
+  color: var(--negative);
+}
+
+.stat-tile--positive .stat-tile-value {
+  color: var(--positive);
+}
+
+.stat-tile--negative .stat-tile-value {
+  color: var(--negative);
+}
+
+.category-bar-chart {
+  max-width: 500px;
+}
+
+.category-bar-label {
+  fill: var(--accent-contrast);
+  font-size: 12px;
+}
+
+.category-bar-amount {
   fill: var(--text-primary);
-  font-size: 0.85rem;
+  font-size: 12px;
 }
 
-.spending-chart-value {
-  fill: var(--text-secondary);
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.budget-progress {
+  width: 100%;
+  min-width: 120px;
+  height: 0.75rem;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+
+.budget-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.budget-progress-bar--green {
+  background: var(--positive);
+}
+
+.budget-progress-bar--amber {
+  background: #ff9800;
+}
+
+.budget-progress-bar--red {
+  background: var(--negative);
+}
+
+.budget-progress-bar--none {
+  background: #bbb;
 }

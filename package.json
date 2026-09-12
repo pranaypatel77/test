@@ -11,9 +11,11 @@
     "dev": "concurrently -n server,client -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w server && npm run build -w client",
     "test": "npm run test -w server && npm run test -w client",
-    "lint": "npm run lint -w server && npm run lint -w client"
+    "lint": "npm run lint -w server && npm run lint -w client",
+    "e2e": "node scripts/e2e-runner.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "1.47.2",
     "concurrently": "^8.2.2"
   },
   "engines": {

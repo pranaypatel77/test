@@ -1,66 +1,69 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchTransactions } from '../api.js';
-import SpendingChart from '../components/SpendingChart.js';
-import type { Transaction } from '../types.js';
-
-function formatAmount(amountCents: number): string {
-  return (amountCents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-}
+import CategoryBarChart from '../components/CategoryBarChart.js';
+import MonthPicker from '../components/MonthPicker.js';
+import { fetchCategories, fetchSummary } from '../api.js';
+import { currentMonth } from '../dateUtils.js';
+import { formatCurrency } from '../format.js';
+import type { Category, Summary } from '../types.js';
 
 export default function Dashboard() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [month, setMonth] = useState(currentMonth());
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [summary, setSummary] = useState<Summary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const loadTransactions = useCallback(async () => {
+  const loadSummary = useCallback(async (targetMonth: string) => {
     try {
-      const transactionList = await fetchTransactions();
-      setTransactions(transactionList);
+      const data = await fetchSummary(targetMonth);
+      setSummary(data);
       setError(null);
     } catch {
-      setError('Failed to load dashboard data.');
+      setError('Failed to load summary.');
     }
   }, []);
 
   useEffect(() => {
-    // Fetches transactions on mount so the summary and chart reflect current data.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadTransactions();
-  }, [loadTransactions]);
+    void fetchCategories()
+      .then(setCategories)
+      .catch(() => setError('Failed to load categories.'));
+  }, []);
 
-  const income = transactions
-    .filter((transaction) => transaction.amount_cents > 0)
-    .reduce((sum, transaction) => sum + transaction.amount_cents, 0);
-  const expenses = transactions
-    .filter((transaction) => transaction.amount_cents < 0)
-    .reduce((sum, transaction) => sum + Math.abs(transaction.amount_cents), 0);
-  const net = income - expenses;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadSummary(month);
+  }, [month, loadSummary]);
+
+  const categoryColors = Object.fromEntries(categories.map((category) => [category.name, category.color]));
+  const hasTransactions = summary !== null && (summary.totalIncome !== 0 || summary.totalExpenses !== 0);
 
   return (
     <section>
       <h2>Dashboard</h2>
+      <MonthPicker month={month} onChange={setMonth} />
+
       {error ? <p role="alert">{error}</p> : null}
-      <dl className="dashboard-summary">
-        <div>
-          <dt>Income</dt>
-          <dd className="transactions-amount transactions-amount--income">{formatAmount(income)}</dd>
-        </div>
-        <div>
-          <dt>Expenses</dt>
-          <dd className="transactions-amount transactions-amount--expense">{formatAmount(expenses)}</dd>
-        </div>
-        <div>
-          <dt>Net</dt>
-          <dd
-            className={`transactions-amount ${
-              net >= 0 ? 'transactions-amount--income' : 'transactions-amount--expense'
-            }`}
-          >
-            {formatAmount(net)}
-          </dd>
-        </div>
-      </dl>
-      <h3>Spending by category</h3>
-      <SpendingChart transactions={transactions} />
+
+      {summary && hasTransactions ? (
+        <>
+          <div className="stat-tiles">
+            <div className="stat-tile stat-tile--neutral">
+              <span className="stat-tile-label">Income</span>
+              <span className="stat-tile-value">{formatCurrency(summary.totalIncome)}</span>
+            </div>
+            <div className="stat-tile stat-tile--expense">
+              <span className="stat-tile-label">Expenses</span>
+              <span className="stat-tile-value">{formatCurrency(summary.totalExpenses)}</span>
+            </div>
+            <div className={`stat-tile ${summary.net >= 0 ? 'stat-tile--positive' : 'stat-tile--negative'}`}>
+              <span className="stat-tile-label">Net</span>
+              <span className="stat-tile-value">{formatCurrency(summary.net)}</span>
+            </div>
+          </div>
+          <CategoryBarChart categoryTotals={summary.categoryTotals} categoryColors={categoryColors} />
+        </>
+      ) : summary ? (
+        <p>No transactions for this month.</p>
+      ) : null}
     </section>
   );
 }
