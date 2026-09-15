@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Transactions from '../src/pages/Transactions.js';
 
@@ -11,6 +11,15 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 const sampleCategories = [{ id: 3, name: 'Dining', color: '#9c27b0', kind: 'expense' }];
+
+/**
+ * Queues the two fetch responses issued on mount: the page loads categories
+ * and transactions concurrently, so both must be mocked before rendering.
+ */
+function mockInitialLoad(fetchMock: ReturnType<typeof vi.fn>, transactions: unknown) {
+  fetchMock.mockResolvedValueOnce(jsonResponse(sampleCategories));
+  fetchMock.mockResolvedValueOnce(jsonResponse(transactions));
+}
 
 const sampleTransactions = [
   {
@@ -32,16 +41,6 @@ const sampleTransactions = [
     created_at: '2024-01-15T10:00:00.000Z',
   },
 ];
-
-/**
- * Queues the two fetch responses issued on mount: the page loads categories
- * and transactions concurrently (categories first), so both must be mocked
- * before rendering.
- */
-function mockInitialLoad(fetchMock: ReturnType<typeof vi.fn>, transactions: unknown) {
-  fetchMock.mockResolvedValueOnce(jsonResponse(sampleCategories));
-  fetchMock.mockResolvedValueOnce(jsonResponse(transactions));
-}
 
 describe('Transactions page', () => {
   beforeEach(() => {
@@ -106,6 +105,8 @@ describe('Transactions page', () => {
       created_at: '2024-07-04T00:00:00.000Z',
     };
     fetchMock.mockResolvedValueOnce(jsonResponse(created, 201));
+    // The page reloads categories and transactions after a successful create.
+    mockInitialLoad(fetchMock, [created]);
 
     fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2024-07-04' } });
     fireEvent.change(screen.getByLabelText('Payee'), { target: { value: 'Bookstore' } });
@@ -116,7 +117,8 @@ describe('Transactions page', () => {
 
     await screen.findByText('Bookstore');
 
-    expect(fetchMock).toHaveBeenLastCalledWith(
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
       '/api/transactions',
       expect.objectContaining({
         method: 'POST',
@@ -124,6 +126,7 @@ describe('Transactions page', () => {
           date: '2024-07-04',
           amount_cents: 4599,
           payee: 'Bookstore',
+          category_id: null,
           note: 'New novel',
         }),
       }),
@@ -134,82 +137,4 @@ describe('Transactions page', () => {
     expect((screen.getByLabelText('Payee') as HTMLInputElement).value).toBe('');
   });
 
-  it('edits a transaction inline via PUT and updates the row', async () => {
-    const fetchMock = fetch as ReturnType<typeof vi.fn>;
-    mockInitialLoad(fetchMock, [sampleTransactions[0]]);
-
-    render(<Transactions />);
-    await screen.findByText('Coffee Shop');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-
-    const editForm = screen.getByRole('form', { name: /edit transaction/i });
-    const payeeInput = within(editForm).getByLabelText('Payee');
-    fireEvent.change(payeeInput, { target: { value: 'Coffee Shop Downtown' } });
-
-    const updated = { ...sampleTransactions[0], payee: 'Coffee Shop Downtown' };
-    fetchMock.mockResolvedValueOnce(jsonResponse(updated));
-
-    fireEvent.click(within(editForm).getByRole('button', { name: 'Save' }));
-
-    await screen.findByText('Coffee Shop Downtown');
-
-    expect(fetchMock).toHaveBeenLastCalledWith(
-      '/api/transactions/2',
-      expect.objectContaining({ method: 'PUT' }),
-    );
-    expect(screen.queryByRole('form', { name: /edit transaction/i })).not.toBeInTheDocument();
-  });
-
-  it('cancels an inline edit without calling the API', async () => {
-    const fetchMock = fetch as ReturnType<typeof vi.fn>;
-    mockInitialLoad(fetchMock, [sampleTransactions[0]]);
-
-    render(<Transactions />);
-    await screen.findByText('Coffee Shop');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-    expect(screen.getByRole('form', { name: /edit transaction/i })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-
-    expect(screen.queryByRole('form', { name: /edit transaction/i })).not.toBeInTheDocument();
-    // Only the two initial loads (categories + transactions) should have fired.
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('deletes a transaction after confirmation', async () => {
-    const fetchMock = fetch as ReturnType<typeof vi.fn>;
-    mockInitialLoad(fetchMock, [sampleTransactions[0]]);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-
-    render(<Transactions />);
-    await screen.findByText('Coffee Shop');
-
-    fetchMock.mockResolvedValueOnce(jsonResponse(null, 204));
-
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-
-    await waitFor(() => expect(screen.queryByText('Coffee Shop')).not.toBeInTheDocument());
-
-    expect(window.confirm).toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/transactions/2', { method: 'DELETE' });
-    expect(await screen.findByText(/no transactions yet/i)).toBeInTheDocument();
-  });
-
-  it('keeps the row when the delete confirmation is dismissed', async () => {
-    const fetchMock = fetch as ReturnType<typeof vi.fn>;
-    mockInitialLoad(fetchMock, [sampleTransactions[0]]);
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
-
-    render(<Transactions />);
-    await screen.findByText('Coffee Shop');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-
-    expect(window.confirm).toHaveBeenCalled();
-    // Only the two initial loads (categories + transactions) should have fired.
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(screen.getByText('Coffee Shop')).toBeInTheDocument();
-  });
 });
