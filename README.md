@@ -2,6 +2,24 @@
 
 A personal expense tracker. Built on causal.stream.
 
+## Features (v1.0.0)
+
+- **Transactions** — a Transactions API and page for recording income and
+  expenses, with inline edit and delete directly in the table.
+- **Categories** — a categories system with colored chips, so every
+  transaction is easy to scan and group at a glance.
+- **Dashboard** — a monthly summary dashboard with an SVG spending chart
+  showing where money went that month.
+- **Budgets** — a budgets table and UI with per-category progress bars that
+  show spend against limit.
+- **Theming** — light/dark theming with a persistent toggle, plus automatic
+  detection of the OS-level color scheme preference on first load.
+- **End-to-end coverage** — a Playwright smoke test that exercises the full
+  create-transaction → set-budget → dashboard journey.
+
+Not in this release: CSV transaction import is planned for a future 1.1
+release and is not available in 1.0.0.
+
 ## Monorepo structure
 
 This is an npm-workspaces monorepo with two packages:
@@ -112,3 +130,15 @@ git mv ci/github-workflows/e2e.yml .github/workflows/e2e.yml
   `server/data` directory) if it does not already exist.
 - Each script above can also be run for a single package with npm's
   workspace flag, e.g. `npm run dev -w server` or `npm run test -w client`.
+
+## Release
+
+See [CHANGELOG.md](./CHANGELOG.md) for the full history of shipped changes.
+
+After this release commit merges to `main`, a maintainer still needs to:
+
+1. Cut and push the `v1.0.0` git tag from the merge commit.
+2. Capture the three UI screenshots (Transactions, Dashboard, Budgets) and
+   add them to the README/docs.
+
+These two steps are intentionally not automated as part of this change.
