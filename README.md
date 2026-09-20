@@ -43,7 +43,7 @@ URLs during development.
 ## Requirements
 
 - Node.js 20+
-- npm 10+
+- npm 8+
 
 ## Install
 
@@ -114,15 +114,10 @@ The e2e spec runs Chromium only and should complete in well under 30 seconds.
 
 ### CI
 
-`ci/github-workflows/e2e.yml` runs lint, the vitest unit tests, and the
-Playwright e2e suite, in that order, on every push, failing the build if any
-step fails. It currently lives outside `.github/workflows/` because the
-automation that authored it isn't permitted to write there; a maintainer
-needs to move it into place once, e.g.:
-
-```
-git mv ci/github-workflows/e2e.yml .github/workflows/e2e.yml
-```
+`.github/workflows/e2e.yml` runs lint, the vitest unit tests, and the
+Playwright e2e suite, in that order, failing the build if any step fails. It
+is triggered by pushes and pull requests targeting `main` and `builder/**`
+branches.
 
 ## Notes
 
