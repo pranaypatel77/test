@@ -1,12 +1,5 @@
 name: CI
 
-# NOTE: This file lives at ci/github-workflows/e2e.yml instead of
-# .github/workflows/e2e.yml because the automation that produced it does not
-# have permission to write under .github/workflows. A human maintainer needs
-# to move this file to .github/workflows/e2e.yml (e.g.
-# `git mv ci/github-workflows/e2e.yml .github/workflows/e2e.yml`) for it to
-# actually run on GitHub Actions.
-
 on:
   push:
     branches:
