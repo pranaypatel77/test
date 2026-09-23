@@ -43,12 +43,20 @@ function migrate(db: Database.Database): void {
       kind TEXT NOT NULL CHECK (kind IN ('expense', 'income'))
     );
 
+    CREATE TABLE IF NOT EXISTS accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      kind TEXT NOT NULL CHECK (kind IN ('checking', 'credit', 'cash')),
+      opening_balance_cents INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       date TEXT NOT NULL,
       amount_cents INTEGER NOT NULL,
       payee TEXT NOT NULL,
       category_id INTEGER,
+      account_id INTEGER REFERENCES accounts(id),
       note TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -63,6 +71,44 @@ function migrate(db: Database.Database): void {
   `);
 
   seedCategories(db);
+  const defaultAccountId = seedDefaultAccount(db);
+  ensureAccountIdColumn(db, defaultAccountId);
+}
+
+/**
+ * Seeds the default "Cash" account on first boot, used to hold any
+ * transactions that are not explicitly assigned to another account. Uses
+ * `INSERT OR IGNORE` against the unique `name` column so it is safe to call
+ * on every boot. Returns the id of the default account.
+ */
+function seedDefaultAccount(db: Database.Database): number {
+  db.prepare(
+    `INSERT OR IGNORE INTO accounts (name, kind, opening_balance_cents) VALUES ('Cash', 'cash', 0)`,
+  ).run();
+
+  const { id } = db.prepare(`SELECT id FROM accounts ORDER BY id ASC LIMIT 1`).get() as {
+    id: number;
+  };
+  return id;
+}
+
+/**
+ * Older databases created before accounts existed won't have an `account_id`
+ * column on `transactions`. This adds the column if it is missing (SQLite
+ * has no `ADD COLUMN IF NOT EXISTS`) and backfills any transaction without an
+ * account to the default account.
+ */
+function ensureAccountIdColumn(db: Database.Database, defaultAccountId: number): void {
+  const columns = db.prepare(`PRAGMA table_info(transactions)`).all() as { name: string }[];
+  const hasAccountId = columns.some((column) => column.name === 'account_id');
+
+  if (!hasAccountId) {
+    db.exec(`ALTER TABLE transactions ADD COLUMN account_id INTEGER REFERENCES accounts(id)`);
+  }
+
+  db.prepare(`UPDATE transactions SET account_id = @accountId WHERE account_id IS NULL`).run({
+    accountId: defaultAccountId,
+  });
 }
 
 /**

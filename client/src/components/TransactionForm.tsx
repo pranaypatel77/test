@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import type { Category } from '../types.js';
+import { useEffect, useState, type FormEvent } from 'react';
+import type { Account, Category } from '../types.js';
 import CategorySelect from './CategorySelect.js';
 
 export interface TransactionFormValues {
@@ -7,21 +7,44 @@ export interface TransactionFormValues {
   amount_cents: number;
   payee: string;
   category_id: number | null;
+  account_id: number | null;
   note: string | null;
 }
 
 interface TransactionFormProps {
   categories: Category[];
+  accounts?: Account[];
+  initialValues?: Partial<TransactionFormValues>;
+  submitLabel?: string;
   onSubmit: (values: TransactionFormValues) => void;
 }
 
-/** A form for entering a new transaction, including a category select. */
-export default function TransactionForm({ categories, onSubmit }: TransactionFormProps) {
-  const [date, setDate] = useState('');
-  const [payee, setPayee] = useState('');
-  const [amount, setAmount] = useState('');
-  const [categoryId, setCategoryId] = useState<number | null>(null);
-  const [note, setNote] = useState('');
+/** A form for entering a new (or editing an existing) transaction, including category and account selects. */
+export default function TransactionForm({
+  categories,
+  accounts = [],
+  initialValues,
+  submitLabel = 'Add transaction',
+  onSubmit,
+}: TransactionFormProps) {
+  const [date, setDate] = useState(initialValues?.date ?? '');
+  const [payee, setPayee] = useState(initialValues?.payee ?? '');
+  const [amount, setAmount] = useState(
+    initialValues?.amount_cents !== undefined ? String(initialValues.amount_cents / 100) : '',
+  );
+  const [categoryId, setCategoryId] = useState<number | null>(initialValues?.category_id ?? null);
+  const [accountId, setAccountId] = useState<number | null>(
+    initialValues?.account_id ?? (accounts[0]?.id ?? null),
+  );
+  const [note, setNote] = useState(initialValues?.note ?? '');
+
+  useEffect(() => {
+    // Once accounts load, default to the first one if none has been chosen yet.
+    if (accountId === null && accounts.length > 0 && initialValues?.account_id === undefined) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAccountId(accounts[0].id);
+    }
+  }, [accounts, accountId, initialValues?.account_id]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -36,18 +59,21 @@ export default function TransactionForm({ categories, onSubmit }: TransactionFor
       amount_cents: amountCents,
       payee: payee.trim(),
       category_id: categoryId,
+      account_id: accountId,
       note: note.trim().length > 0 ? note.trim() : null,
     });
 
-    setDate('');
-    setPayee('');
-    setAmount('');
-    setCategoryId(null);
-    setNote('');
+    if (!initialValues) {
+      setDate('');
+      setPayee('');
+      setAmount('');
+      setCategoryId(null);
+      setNote('');
+    }
   }
 
   return (
-    <form onSubmit={handleSubmit} aria-label="Add transaction">
+    <form onSubmit={handleSubmit} aria-label={submitLabel}>
       <div>
         <label htmlFor="transaction-date">Date</label>
         <input
@@ -89,6 +115,23 @@ export default function TransactionForm({ categories, onSubmit }: TransactionFor
         />
       </div>
       <div>
+        <label htmlFor="transaction-account">Account</label>
+        <select
+          id="transaction-account"
+          value={accountId === null ? '' : String(accountId)}
+          onChange={(event) => {
+            const raw = event.target.value;
+            setAccountId(raw === '' ? null : Number(raw));
+          }}
+        >
+          {accounts.map((account) => (
+            <option key={account.id} value={account.id}>
+              {account.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
         <label htmlFor="transaction-note">Note</label>
         <input
           id="transaction-note"
@@ -97,7 +140,7 @@ export default function TransactionForm({ categories, onSubmit }: TransactionFor
           onChange={(event) => setNote(event.target.value)}
         />
       </div>
-      <button type="submit">Add transaction</button>
+      <button type="submit">{submitLabel}</button>
     </form>
   );
 }
