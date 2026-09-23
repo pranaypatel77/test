@@ -131,6 +131,101 @@ describe('/api/transactions', () => {
       expect(response.body).toHaveLength(1);
       expect(response.body[0].payee).toBe('Category Two');
     });
+
+    it('filters by multiple category_id values', async () => {
+      const app = createApp(tempDbPath());
+
+      await request(app)
+        .post('/api/transactions')
+        .send({ ...validTransaction, category_id: 1, payee: 'Category One' });
+      await request(app)
+        .post('/api/transactions')
+        .send({ ...validTransaction, category_id: 2, payee: 'Category Two' });
+      await request(app)
+        .post('/api/transactions')
+        .send({ ...validTransaction, category_id: 3, payee: 'Category Three' });
+
+      const response = await request(app)
+        .get('/api/transactions')
+        .query({ category_id: ['1', '3'] });
+
+      expect(response.status).toBe(200);
+      expect(response.body.map((t: { payee: string }) => t.payee).sort()).toEqual([
+        'Category One',
+        'Category Three',
+      ]);
+    });
+
+    it('filters by q matching the payee, case-insensitively', async () => {
+      const app = createApp(tempDbPath());
+
+      await request(app)
+        .post('/api/transactions')
+        .send({ ...validTransaction, payee: 'Coffee Shop', note: null });
+      await request(app)
+        .post('/api/transactions')
+        .send({ ...validTransaction, payee: 'Grocery Store', note: null });
+
+      const response = await request(app).get('/api/transactions').query({ q: 'COFFEE' });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveLength(1);
+      expect(response.body[0].payee).toBe('Coffee Shop');
+    });
+
+    it('filters by q matching the note, case-insensitively', async () => {
+      const app = createApp(tempDbPath());
+
+      await request(app)
+        .post('/api/transactions')
+        .send({ ...validTransaction, payee: 'Store A', note: 'Birthday gift' });
+      await request(app)
+        .post('/api/transactions')
+        .send({ ...validTransaction, payee: 'Store B', note: 'Groceries' });
+
+      const response = await request(app).get('/api/transactions').query({ q: 'birthday' });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveLength(1);
+      expect(response.body[0].payee).toBe('Store A');
+    });
+
+    it('combines q, category_id, and date range filters', async () => {
+      const app = createApp(tempDbPath());
+
+      await request(app).post('/api/transactions').send({
+        ...validTransaction,
+        date: '2024-03-10',
+        category_id: 2,
+        payee: 'Coffee Shop',
+        note: null,
+      });
+      await request(app).post('/api/transactions').send({
+        ...validTransaction,
+        date: '2024-03-10',
+        category_id: 1,
+        payee: 'Coffee Shop',
+        note: null,
+      });
+      await request(app).post('/api/transactions').send({
+        ...validTransaction,
+        date: '2024-09-10',
+        category_id: 2,
+        payee: 'Coffee Shop',
+        note: null,
+      });
+
+      const response = await request(app).get('/api/transactions').query({
+        q: 'coffee',
+        category_id: '2',
+        from: '2024-01-01',
+        to: '2024-06-01',
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveLength(1);
+      expect(response.body[0]).toMatchObject({ date: '2024-03-10', category_id: 2 });
+    });
   });
 
   describe('POST /api/transactions', () => {
