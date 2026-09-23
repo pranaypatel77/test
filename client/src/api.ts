@@ -19,9 +19,35 @@ export async function fetchCategories(): Promise<Category[]> {
   return response.json() as Promise<Category[]>;
 }
 
-/** Fetches all transactions from the API. */
-export async function fetchTransactions(): Promise<Transaction[]> {
-  const response = await fetch('/api/transactions');
+export interface TransactionFilters {
+  q?: string;
+  categoryIds?: number[];
+  from?: string;
+  to?: string;
+}
+
+/**
+ * Fetches transactions from the API, optionally narrowed by a search term,
+ * one or more category ids, and/or an inclusive date range.
+ */
+export async function fetchTransactions(filters: TransactionFilters = {}): Promise<Transaction[]> {
+  const params = new URLSearchParams();
+
+  if (filters.q) {
+    params.set('q', filters.q);
+  }
+  if (filters.from) {
+    params.set('from', filters.from);
+  }
+  if (filters.to) {
+    params.set('to', filters.to);
+  }
+  for (const categoryId of filters.categoryIds ?? []) {
+    params.append('category_id', String(categoryId));
+  }
+
+  const query = params.toString();
+  const response = await fetch(`/api/transactions${query ? `?${query}` : ''}`);
   if (!response.ok) {
     throw new Error('Failed to load transactions.');
   }

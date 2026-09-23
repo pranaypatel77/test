@@ -505,7 +505,7 @@ export function createApp(dbPath: string = DB_PATH): Express {
   });
 
   app.get('/api/transactions', (req: Request, res: Response) => {
-    const { from, to, category_id: categoryId } = req.query;
+    const { from, to, category_id: categoryId, q } = req.query;
 
     const clauses: string[] = [];
     const params: Record<string, string | number> = {};
@@ -528,14 +528,37 @@ export function createApp(dbPath: string = DB_PATH): Express {
       params.to = to;
     }
 
-    if (typeof categoryId === 'string') {
-      const parsedCategoryId = Number(categoryId);
-      if (!Number.isInteger(parsedCategoryId)) {
-        res.status(400).json({ error: 'category_id must be an integer.' });
-        return;
+    if (categoryId !== undefined) {
+      // `category_id` may be repeated in the query string (e.g.
+      // `?category_id=1&category_id=2`) to support multi-category filtering.
+      const categoryIdValues = Array.isArray(categoryId) ? categoryId : [categoryId];
+      const parsedCategoryIds: number[] = [];
+
+      for (const value of categoryIdValues) {
+        if (typeof value !== 'string') {
+          res.status(400).json({ error: 'category_id must be an integer.' });
+          return;
+        }
+        const parsedCategoryId = Number(value);
+        if (!Number.isInteger(parsedCategoryId)) {
+          res.status(400).json({ error: 'category_id must be an integer.' });
+          return;
+        }
+        parsedCategoryIds.push(parsedCategoryId);
       }
-      clauses.push('t.category_id = @categoryId');
-      params.categoryId = parsedCategoryId;
+
+      if (parsedCategoryIds.length > 0) {
+        const placeholders = parsedCategoryIds.map((_, index) => `@categoryId${index}`).join(', ');
+        clauses.push(`t.category_id IN (${placeholders})`);
+        parsedCategoryIds.forEach((value, index) => {
+          params[`categoryId${index}`] = value;
+        });
+      }
+    }
+
+    if (typeof q === 'string' && q.trim().length > 0) {
+      clauses.push('(LOWER(t.payee) LIKE @q OR LOWER(t.note) LIKE @q)');
+      params.q = `%${q.trim().toLowerCase()}%`;
     }
 
     const where = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
