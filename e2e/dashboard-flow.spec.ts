@@ -24,7 +24,7 @@ test('create a transaction, set a budget, and see it reflected on the dashboard'
 
   const transactionRow = page.getByRole('row', { name: new RegExp(payee) });
   await expect(transactionRow).toBeVisible();
-  await expect(transactionRow.getByText('-$42.50')).toBeVisible();
+  await expect(transactionRow.locator('.transactions-amount')).toHaveText('-$42.50');
 
   // 2. Navigate to Budgets and set a limit for the Groceries category.
   await page.getByRole('link', { name: 'Budgets' }).click();
