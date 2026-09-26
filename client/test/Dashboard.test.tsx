@@ -26,10 +26,11 @@ const sampleAccounts = [
  * categories, accounts, and the summary concurrently, so all three must be
  * mocked before rendering.
  */
-function mockInitialLoad(fetchMock: ReturnType<typeof vi.fn>, summary: unknown) {
+function mockInitialLoad(fetchMock: ReturnType<typeof vi.fn>, summary: unknown, recurring: unknown[] = []) {
   fetchMock.mockResolvedValueOnce(jsonResponse(sampleCategories));
   fetchMock.mockResolvedValueOnce(jsonResponse(sampleAccounts));
   fetchMock.mockResolvedValueOnce(jsonResponse(summary));
+  fetchMock.mockResolvedValueOnce(jsonResponse(recurring));
 }
 
 /** Finds a stat tile by its label ("Income", "Expenses", or "Net") and returns its value text. */
@@ -213,5 +214,80 @@ describe('Dashboard page', () => {
       expect(fetchMock).toHaveBeenLastCalledWith('/api/summary?month=2024-03&account_id=2'),
     );
     expect(await findTileValue('Income')).toHaveTextContent('$200.00');
+  });
+
+  it('shows an empty state in the Recurring section when none are detected', async () => {
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    mockInitialLoad(fetchMock, { totalIncome: 0, totalExpenses: 0, net: 0, categoryTotals: {} }, []);
+
+    render(<Dashboard />);
+
+    const recurringSection = (await screen.findByText('Recurring')).closest('section') as HTMLElement;
+    expect(within(recurringSection).getByText(/no recurring transactions detected/i)).toBeInTheDocument();
+  });
+
+  it('lists detected recurring series with payee, cadence, amount, and next expected date', async () => {
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    mockInitialLoad(fetchMock, { totalIncome: 0, totalExpenses: 0, net: 0, categoryTotals: {} }, [
+      {
+        payee: 'Netflix',
+        category_id: null,
+        average_amount_cents: -1599,
+        cadence: 'monthly',
+        last_seen_date: '2024-03-05',
+        next_expected_date: '2024-04-05',
+        transaction_ids: [1, 2, 3],
+        confidence: 0.9,
+      },
+    ]);
+
+    render(<Dashboard />);
+
+    const recurringSection = (await screen.findByText('Recurring')).closest('section') as HTMLElement;
+    expect(within(recurringSection).getByText('Netflix')).toBeInTheDocument();
+    expect(within(recurringSection).getByText('Monthly')).toBeInTheDocument();
+    expect(within(recurringSection).getByText('-$15.99')).toBeInTheDocument();
+    expect(within(recurringSection).getByText(/2024-04-05/)).toBeInTheDocument();
+    expect(within(recurringSection).getByRole('button', { name: 'Not recurring' })).toBeInTheDocument();
+  });
+
+  it('dismisses a recurring series and removes it from the list', async () => {
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    mockInitialLoad(fetchMock, { totalIncome: 0, totalExpenses: 0, net: 0, categoryTotals: {} }, [
+      {
+        payee: 'Spotify',
+        category_id: null,
+        average_amount_cents: -999,
+        cadence: 'monthly',
+        last_seen_date: '2024-03-05',
+        next_expected_date: '2024-04-05',
+        transaction_ids: [1, 2, 3],
+        confidence: 0.9,
+      },
+    ]);
+
+    render(<Dashboard />);
+
+    const recurringSection = (await screen.findByText('Recurring')).closest('section') as HTMLElement;
+    expect(within(recurringSection).getByText('Spotify')).toBeInTheDocument();
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(undefined, 204));
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+
+    fireEvent.click(within(recurringSection).getByRole('button', { name: 'Not recurring' }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/recurring/dismiss',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ payee: 'Spotify', cadence: 'monthly' }),
+        }),
+      ),
+    );
+
+    await waitFor(() =>
+      expect(within(recurringSection).getByText(/no recurring transactions detected/i)).toBeInTheDocument(),
+    );
   });
 });

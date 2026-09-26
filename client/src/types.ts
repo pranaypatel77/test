@@ -43,3 +43,16 @@ export interface BudgetStatus {
   limit_cents: number | null;
   amount_spent_cents: number;
 }
+
+export type Cadence = 'weekly' | 'monthly' | 'annual';
+
+export interface RecurringSeries {
+  payee: string;
+  category_id: number | null;
+  average_amount_cents: number;
+  cadence: Cadence;
+  last_seen_date: string;
+  next_expected_date: string;
+  transaction_ids: number[];
+  confidence: number;
+}

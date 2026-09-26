@@ -1,4 +1,13 @@
-import type { Account, AccountKind, BudgetStatus, Category, Summary, Transaction } from './types.js';
+import type {
+  Account,
+  AccountKind,
+  BudgetStatus,
+  Cadence,
+  Category,
+  RecurringSeries,
+  Summary,
+  Transaction,
+} from './types.js';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
@@ -127,6 +136,27 @@ export async function updateBudget(
     throw new Error('Failed to update budget.');
   }
   return response.json() as Promise<BudgetStatus>;
+}
+
+/** Fetches detected recurring transaction series, excluding any dismissed series. */
+export async function fetchRecurringSeries(): Promise<RecurringSeries[]> {
+  const response = await fetch('/api/recurring');
+  if (!response.ok) {
+    throw new Error('Failed to load recurring transactions.');
+  }
+  return response.json() as Promise<RecurringSeries[]>;
+}
+
+/** Marks a recurring series as "not recurring", persisting the dismissal. */
+export async function dismissRecurringSeries(payee: string, cadence: Cadence): Promise<void> {
+  const response = await fetch('/api/recurring/dismiss', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ payee, cadence }),
+  });
+  if (!response.ok) {
+    throw new Error('Failed to dismiss recurring series.');
+  }
 }
 
 /** Creates a new transaction. */
