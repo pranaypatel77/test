@@ -2,12 +2,14 @@ import cors from 'cors';
 import type Database from 'better-sqlite3';
 import express, { type Express, type Request, type Response } from 'express';
 import { createDatabase, DB_PATH } from './db.js';
+import { computeRecurringSeries, normalizePayee } from './recurring.js';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 const CATEGORY_KINDS = ['expense', 'income'] as const;
 const ACCOUNT_KINDS = ['checking', 'credit', 'cash'] as const;
+const CADENCES = ['weekly', 'monthly', 'annual'] as const;
 
 type CategoryKind = (typeof CATEGORY_KINDS)[number];
 type AccountKind = (typeof ACCOUNT_KINDS)[number];
@@ -825,6 +827,33 @@ export function createApp(dbPath: string = DB_PATH): Express {
       res.status(404).json({ error: 'Transaction not found.' });
       return;
     }
+
+    res.status(204).send();
+  });
+
+  app.get('/api/recurring', (_req: Request, res: Response) => {
+    const series = computeRecurringSeries(db);
+    res.json(series);
+  });
+
+  app.post('/api/recurring/dismiss', (req: Request, res: Response) => {
+    const { payee, cadence } = (req.body ?? {}) as Record<string, unknown>;
+
+    if (typeof payee !== 'string' || payee.trim().length === 0) {
+      res.status(400).json({ error: 'payee must be a non-empty string.' });
+      return;
+    }
+
+    if (!CADENCES.includes(cadence as (typeof CADENCES)[number])) {
+      res.status(400).json({ error: "cadence must be one of 'weekly', 'monthly', or 'annual'." });
+      return;
+    }
+
+    db.prepare(
+      `INSERT INTO dismissed_series (normalized_payee, cadence)
+       VALUES (@normalized_payee, @cadence)
+       ON CONFLICT (normalized_payee, cadence) DO NOTHING`,
+    ).run({ normalized_payee: normalizePayee(payee), cadence });
 
     res.status(204).send();
   });

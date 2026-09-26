@@ -68,6 +68,14 @@ function migrate(db: Database.Database): void {
       limit_cents INTEGER NOT NULL,
       UNIQUE (category_id, month)
     );
+
+    CREATE TABLE IF NOT EXISTS dismissed_series (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      normalized_payee TEXT NOT NULL,
+      cadence TEXT NOT NULL,
+      dismissed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (normalized_payee, cadence)
+    );
   `);
 
   seedCategories(db);
