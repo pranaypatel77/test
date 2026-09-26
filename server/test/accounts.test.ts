@@ -224,4 +224,65 @@ describe('transaction filtering by account', () => {
     expect(response.status).toBe(200);
     expect(response.body.totalExpenses).toBe(1500);
   });
+
+  it('rejects POST /api/transactions with an account_id that does not exist', async () => {
+    const app = createApp(tempDbPath());
+
+    const response = await request(app).post('/api/transactions').send({
+      date: '2024-03-15',
+      amount_cents: -1500,
+      payee: 'Ghost',
+      account_id: 999,
+    });
+
+    // Without the existence check the REFERENCES constraint raises a
+    // SqliteError, which Express renders as a 500 HTML page containing a stack
+    // trace — a client mistake reported as a server fault.
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('account_id must reference an existing account.');
+  });
+
+  it('rejects PUT /api/transactions/:id with an account_id that does not exist', async () => {
+    const app = createApp(tempDbPath());
+    const created = await request(app).post('/api/transactions').send({
+      date: '2024-03-15',
+      amount_cents: -1500,
+      payee: 'Corner Store',
+    });
+
+    const response = await request(app).put(`/api/transactions/${created.body.id}`).send({
+      date: '2024-03-15',
+      amount_cents: -1500,
+      payee: 'Corner Store',
+      account_id: 999,
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('account_id must reference an existing account.');
+  });
+
+  it('still accepts a valid account_id on both POST and PUT', async () => {
+    const app = createApp(tempDbPath());
+    const checking = await request(app)
+      .post('/api/accounts')
+      .send({ name: 'Checking', kind: 'checking' });
+
+    const created = await request(app).post('/api/transactions').send({
+      date: '2024-03-15',
+      amount_cents: -1500,
+      payee: 'Corner Store',
+      account_id: checking.body.id,
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.account_id).toBe(checking.body.id);
+
+    const updated = await request(app).put(`/api/transactions/${created.body.id}`).send({
+      date: '2024-03-16',
+      amount_cents: -1600,
+      payee: 'Corner Store',
+      account_id: checking.body.id,
+    });
+    expect(updated.status).toBe(200);
+    expect(updated.body.account_id).toBe(checking.body.id);
+  });
 });

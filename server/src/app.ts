@@ -314,6 +314,20 @@ function parseTransactionInput(
   };
 }
 
+/**
+ * Returns true when `accountId` names a row in the accounts table.
+ *
+ * `transactions.account_id` carries a `REFERENCES accounts(id)` constraint, so
+ * inserting an unknown id makes SQLite raise a FOREIGN KEY error, which Express
+ * surfaces as a 500 with a stack trace — a client mistake reported as a server
+ * fault, leaking internal paths. Both write handlers check this first and
+ * return 400 instead.
+ */
+function accountExists(db: Database.Database, accountId: number): boolean {
+  const row = db.prepare(`SELECT id FROM accounts WHERE id = ?`).get(accountId);
+  return row !== undefined;
+}
+
 /** Returns the id of the default account (the earliest created account). */
 function getDefaultAccountId(db: Database.Database): number | null {
   const row = db.prepare(`SELECT id FROM accounts ORDER BY id ASC LIMIT 1`).get() as
@@ -741,6 +755,10 @@ export function createApp(dbPath: string = DB_PATH): Express {
     }
 
     const { date, amount_cents, payee, category_id, account_id, note } = parsed.value;
+    if (account_id !== undefined && account_id !== null && !accountExists(db, account_id)) {
+      res.status(400).json({ error: 'account_id must reference an existing account.' });
+      return;
+    }
     const resolvedAccountId = account_id ?? getDefaultAccountId(db);
 
     const result = db
@@ -777,6 +795,10 @@ export function createApp(dbPath: string = DB_PATH): Express {
     }
 
     const { date, amount_cents, payee, category_id, account_id, note } = parsed.value;
+    if (account_id !== undefined && account_id !== null && !accountExists(db, account_id)) {
+      res.status(400).json({ error: 'account_id must reference an existing account.' });
+      return;
+    }
     const resolvedAccountId = account_id ?? getDefaultAccountId(db);
 
     db.prepare(
