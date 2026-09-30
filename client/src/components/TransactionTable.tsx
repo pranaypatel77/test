@@ -3,6 +3,14 @@ import CategoryChip from './CategoryChip.js';
 
 interface TransactionTableProps {
   transactions: Transaction[];
+  /**
+   * The balance to start accumulating from before any of the given
+   * transactions are applied. For a single-account view this should be that
+   * account's `opening_balance_cents`; for an "All Accounts" view this
+   * should be the sum of every account's `opening_balance_cents`.
+   */
+  openingBalanceCents?: number;
+  onEdit?: (transaction: Transaction) => void;
 }
 
 function formatAmount(amountCents: number): string {
@@ -13,11 +21,43 @@ function formatAmount(amountCents: number): string {
   return amountCents < 0 ? `-${formatted}` : formatted;
 }
 
-/** A table of transactions, including a colored chip for each one's category. */
-export default function TransactionTable({ transactions }: TransactionTableProps) {
+/**
+ * Computes the running balance after each transaction, processing them in
+ * ascending date order (ties broken by id) starting from
+ * `openingBalanceCents`. Returns a map from transaction id to the balance
+ * immediately after that transaction is applied.
+ */
+function computeRunningBalances(
+  transactions: Transaction[],
+  openingBalanceCents: number,
+): Map<number, number> {
+  const ascending = [...transactions].sort((a, b) => {
+    if (a.date !== b.date) {
+      return a.date < b.date ? -1 : 1;
+    }
+    return a.id - b.id;
+  });
+
+  let running = openingBalanceCents;
+  const balances = new Map<number, number>();
+  for (const transaction of ascending) {
+    running += transaction.amount_cents;
+    balances.set(transaction.id, running);
+  }
+  return balances;
+}
+
+/** A table of transactions, including a colored chip for each one's category and a running balance. */
+export default function TransactionTable({
+  transactions,
+  openingBalanceCents = 0,
+  onEdit,
+}: TransactionTableProps) {
   if (transactions.length === 0) {
     return <p>No transactions yet.</p>;
   }
+
+  const balances = computeRunningBalances(transactions, openingBalanceCents);
 
   return (
     <table>
@@ -27,7 +67,9 @@ export default function TransactionTable({ transactions }: TransactionTableProps
           <th>Payee</th>
           <th>Category</th>
           <th>Amount</th>
+          <th>Balance</th>
           <th>Note</th>
+          {onEdit ? <th>Actions</th> : null}
         </tr>
       </thead>
       <tbody>
@@ -51,7 +93,17 @@ export default function TransactionTable({ transactions }: TransactionTableProps
             >
               {formatAmount(transaction.amount_cents)}
             </td>
+            <td className="transactions-balance">
+              {formatAmount(balances.get(transaction.id) ?? openingBalanceCents)}
+            </td>
             <td>{transaction.note}</td>
+            {onEdit ? (
+              <td>
+                <button type="button" onClick={() => onEdit(transaction)}>
+                  Edit
+                </button>
+              </td>
+            ) : null}
           </tr>
         ))}
       </tbody>

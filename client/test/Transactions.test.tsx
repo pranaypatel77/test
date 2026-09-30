@@ -1,6 +1,18 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Transactions from '../src/pages/Transactions.js';
+
+function renderTransactions(initialEntries: string[] = ['/transactions']) {
+  return render(
+    <MemoryRouter
+      initialEntries={initialEntries}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
+      <Transactions />
+    </MemoryRouter>,
+  );
+}
 
 function jsonResponse(body: unknown, status = 200) {
   return {
@@ -12,12 +24,23 @@ function jsonResponse(body: unknown, status = 200) {
 
 const sampleCategories = [{ id: 3, name: 'Dining', color: '#9c27b0', kind: 'expense' }];
 
+const sampleAccounts = [
+  { id: 1, name: 'Cash', kind: 'cash', opening_balance_cents: 0 },
+  { id: 2, name: 'Checking', kind: 'checking', opening_balance_cents: 10000 },
+];
+
 /**
- * Queues the two fetch responses issued on mount: the page loads categories
- * and transactions concurrently, so both must be mocked before rendering.
+ * Queues the three fetch responses issued on mount: the page loads
+ * categories, accounts, and transactions concurrently, so all three must be
+ * mocked before rendering.
  */
-function mockInitialLoad(fetchMock: ReturnType<typeof vi.fn>, transactions: unknown) {
+function mockInitialLoad(
+  fetchMock: ReturnType<typeof vi.fn>,
+  transactions: unknown,
+  accounts: unknown = sampleAccounts,
+) {
   fetchMock.mockResolvedValueOnce(jsonResponse(sampleCategories));
+  fetchMock.mockResolvedValueOnce(jsonResponse(accounts));
   fetchMock.mockResolvedValueOnce(jsonResponse(transactions));
 }
 
@@ -28,6 +51,7 @@ const sampleTransactions = [
     amount_cents: -1500,
     payee: 'Coffee Shop',
     category_id: 3,
+    account_id: 1,
     note: 'Morning latte',
     created_at: '2024-06-01T10:00:00.000Z',
   },
@@ -37,6 +61,7 @@ const sampleTransactions = [
     amount_cents: 200000,
     payee: 'Employer',
     category_id: null,
+    account_id: 1,
     note: null,
     created_at: '2024-01-15T10:00:00.000Z',
   },
@@ -56,7 +81,7 @@ describe('Transactions page', () => {
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
     mockInitialLoad(fetchMock, []);
 
-    render(<Transactions />);
+    renderTransactions();
 
     expect(
       await screen.findByText(/no transactions yet/i),
@@ -68,7 +93,7 @@ describe('Transactions page', () => {
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
     mockInitialLoad(fetchMock, sampleTransactions);
 
-    render(<Transactions />);
+    renderTransactions();
 
     const table = await screen.findByRole('table');
     const rows = within(table).getAllByRole('row').slice(1); // drop header row
@@ -92,7 +117,7 @@ describe('Transactions page', () => {
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
     mockInitialLoad(fetchMock, []);
 
-    render(<Transactions />);
+    renderTransactions();
     await screen.findByText(/no transactions yet/i);
 
     const created = {
@@ -101,11 +126,12 @@ describe('Transactions page', () => {
       amount_cents: 4599,
       payee: 'Bookstore',
       category_id: null,
+      account_id: 1,
       note: 'New novel',
       created_at: '2024-07-04T00:00:00.000Z',
     };
     fetchMock.mockResolvedValueOnce(jsonResponse(created, 201));
-    // The page reloads categories and transactions after a successful create.
+    // The page reloads categories, accounts, and transactions after a successful create.
     mockInitialLoad(fetchMock, [created]);
 
     fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2024-07-04' } });
@@ -118,7 +144,7 @@ describe('Transactions page', () => {
     await screen.findByText('Bookstore');
 
     expect(fetchMock).toHaveBeenNthCalledWith(
-      3,
+      4,
       '/api/transactions',
       expect.objectContaining({
         method: 'POST',
@@ -127,14 +153,139 @@ describe('Transactions page', () => {
           amount_cents: 4599,
           payee: 'Bookstore',
           category_id: null,
+          account_id: 1,
           note: 'New novel',
         }),
       }),
     );
 
-    expect(screen.getByText('$45.99')).toHaveClass('transactions-amount--income');
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('$45.99')).toHaveClass('transactions-amount--income');
     // Form resets after a successful submit.
     expect((screen.getByLabelText('Payee') as HTMLInputElement).value).toBe('');
   });
 
+  it('displays a running total of the filtered transactions', async () => {
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    mockInitialLoad(fetchMock, sampleTransactions);
+
+    renderTransactions();
+
+    await screen.findByRole('table');
+
+    // -1500 + 200000 = 198500 cents.
+    expect(screen.getByText('$1,985.00')).toBeInTheDocument();
+  });
+
+  it('debounces the search box, requests ?q=, and reflects it in the URL', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    mockInitialLoad(fetchMock, sampleTransactions);
+
+    renderTransactions();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
+
+    fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'coffee' } });
+
+    // No new request should fire before the debounce window elapses.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/transactions?q=coffee');
+
+    vi.useRealTimers();
+  });
+
+  it('filters by selected categories and reflects them in the URL', async () => {
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    mockInitialLoad(fetchMock, sampleTransactions);
+
+    renderTransactions();
+    await screen.findByRole('table');
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Dining' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/transactions?category_id=3');
+  });
+
+  it('filters by a date range and reflects it in the URL', async () => {
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    mockInitialLoad(fetchMock, sampleTransactions);
+
+    renderTransactions();
+    await screen.findByRole('table');
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
+    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2024-05-01' } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/transactions?from=2024-05-01');
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
+    fireEvent.change(screen.getByLabelText('To'), { target: { value: '2024-06-30' } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      '/api/transactions?from=2024-05-01&to=2024-06-30',
+    );
+  });
+
+  it('restores filters from the URL on page load', async () => {
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    mockInitialLoad(fetchMock, [sampleTransactions[0]]);
+
+    renderTransactions(['/transactions?q=coffee&categories=3&from=2024-01-01&to=2024-12-31']);
+
+    await screen.findByRole('table');
+
+    expect((screen.getByLabelText('Search') as HTMLInputElement).value).toBe('coffee');
+    expect((screen.getByLabelText('From') as HTMLInputElement).value).toBe('2024-01-01');
+    expect((screen.getByLabelText('To') as HTMLInputElement).value).toBe('2024-12-31');
+    expect(screen.getByRole('checkbox', { name: 'Dining' })).toBeChecked();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      '/api/transactions?q=coffee&from=2024-01-01&to=2024-12-31&category_id=3',
+    );
+  });
+
+  it('shows a tab bar with one tab per account plus "All Accounts"', async () => {
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    mockInitialLoad(fetchMock, sampleTransactions);
+
+    renderTransactions();
+    await screen.findByRole('table');
+
+    expect(screen.getByRole('tab', { name: 'All Accounts' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Cash' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Checking' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'All Accounts' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('filters the transaction list by account when an account tab is clicked', async () => {
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    mockInitialLoad(fetchMock, sampleTransactions);
+
+    renderTransactions();
+    await screen.findByRole('table');
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([sampleTransactions[0]]));
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Cash' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/transactions?account_id=1');
+    expect(screen.getByRole('tab', { name: 'Cash' })).toHaveAttribute('aria-selected', 'true');
+  });
 });
