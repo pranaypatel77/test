@@ -2,6 +2,7 @@ import cors from 'cors';
 import type Database from 'better-sqlite3';
 import express, { type Express, type Request, type Response } from 'express';
 import { createDatabase, DB_PATH } from './db.js';
+import { importTransactionsCsv } from './import.js';
 import { computeRecurringSeries, normalizePayee } from './recurring.js';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -348,6 +349,7 @@ export function createApp(dbPath: string = DB_PATH): Express {
 
   app.use(cors());
   app.use(express.json());
+  app.use(express.text({ type: 'text/csv' }));
 
   app.get('/api/health', (_req, res) => {
     // A cheap query confirms the database connection is alive.
@@ -775,6 +777,23 @@ export function createApp(dbPath: string = DB_PATH): Express {
       .get(result.lastInsertRowid) as TransactionRow;
 
     res.status(201).json(created);
+  });
+
+  app.post('/api/transactions/import', (req: Request, res: Response) => {
+    if (typeof req.body !== 'string') {
+      res.status(400).json({ error: 'Request body must be text/csv.' });
+      return;
+    }
+
+    const result = importTransactionsCsv(db, req.body);
+    if (result === null) {
+      res
+        .status(400)
+        .json({ error: 'CSV header must be exactly: date,amount,description,category.' });
+      return;
+    }
+
+    res.json(result);
   });
 
   app.put('/api/transactions/:id', (req: Request, res: Response) => {
