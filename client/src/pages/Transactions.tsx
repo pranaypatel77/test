@@ -8,6 +8,7 @@ import {
   updateTransaction,
 } from '../api.js';
 import CategoryMultiSelect from '../components/CategoryMultiSelect.js';
+import ImportDialog from '../components/ImportDialog.js';
 import TransactionForm, { type TransactionFormValues } from '../components/TransactionForm.js';
 import TransactionTable from '../components/TransactionTable.js';
 import { formatCurrency } from '../format.js';
@@ -34,6 +35,7 @@ export default function Transactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   const q = searchParams.get('q') ?? '';
   const from = searchParams.get('from') ?? '';
@@ -191,6 +193,15 @@ export default function Transactions() {
     <section>
       <h2>Transactions</h2>
       {error ? <p role="alert">{error}</p> : null}
+      <button type="button" onClick={() => setIsImportOpen(true)}>
+        Import
+      </button>
+      {isImportOpen ? (
+        <ImportDialog
+          onClose={() => setIsImportOpen(false)}
+          onImported={loadTransactions}
+        />
+      ) : null}
       <TransactionForm categories={categories} accounts={accounts} onSubmit={handleSubmit} />
 
       {editingTransaction ? (
