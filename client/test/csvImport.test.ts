@@ -40,6 +40,20 @@ describe('parseTransactionsCsv', () => {
     ]);
   });
 
+  it('accepts a header with reordered and extra columns', () => {
+    const csv = [
+      'description,date,extra,category,amount',
+      'Coffee,2024-03-01,ignored,Dining,12.50',
+    ].join('\n');
+
+    const { rows, errors } = parseTransactionsCsv(csv);
+
+    expect(errors).toEqual([]);
+    expect(rows).toEqual([
+      { line: 2, date: '2024-03-01', amount: 12.5, description: 'Coffee', category: 'Dining' },
+    ]);
+  });
+
   it('rejects a CSV with a missing or malformed header', () => {
     const csv = 'foo,bar,baz\n1,2,3';
 

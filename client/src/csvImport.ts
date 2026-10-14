@@ -1,9 +1,11 @@
 /**
  * Pure CSV parsing utility for previewing transaction imports.
  *
- * Expects a header row of `date,amount,description,category` followed by
- * data rows. Does not throw: malformed rows are reported as per-line errors
- * while valid rows are still parsed and returned.
+ * Expects a header row containing `date`, `amount`, `description` and
+ * `category` columns (case-insensitive, order-independent, extra columns
+ * ignored) followed by data rows. Does not throw: malformed rows are
+ * reported as per-line errors while valid rows are still parsed and
+ * returned.
  */
 
 export interface ParsedTransactionRow {
@@ -45,9 +47,10 @@ function isValidDate(value: string): boolean {
 }
 
 /**
- * Parses CSV text with a `date,amount,description,category` header into
- * typed rows for a preview table, collecting per-line errors (bad date,
- * non-numeric amount, empty description) without throwing.
+ * Parses CSV text with a `date`, `amount`, `description` and `category`
+ * header (order-independent, extra columns ignored) into typed rows for a
+ * preview table, collecting per-line errors (bad date, non-numeric amount,
+ * empty description) without throwing.
  */
 export function parseTransactionsCsv(text: string): CsvParseResult {
   const rows: ParsedTransactionRow[] = [];
@@ -65,11 +68,13 @@ export function parseTransactionsCsv(text: string): CsvParseResult {
   }
 
   const header = splitLine(lines[0]).map((field) => field.toLowerCase());
-  const headerMatches =
-    header.length === EXPECTED_HEADER.length &&
-    EXPECTED_HEADER.every((name, index) => header[index] === name);
+  const columnIndex: Record<string, number> = {};
+  for (const name of EXPECTED_HEADER) {
+    columnIndex[name] = header.indexOf(name);
+  }
+  const missingColumns = EXPECTED_HEADER.filter((name) => columnIndex[name] === -1);
 
-  if (!headerMatches) {
+  if (missingColumns.length > 0) {
     errors.push({
       line: 1,
       message: `Expected header "${EXPECTED_HEADER.join(',')}"`,
@@ -83,7 +88,10 @@ export function parseTransactionsCsv(text: string): CsvParseResult {
     if (rawLine.trim() === '') continue;
 
     const fields = splitLine(rawLine);
-    const [date = '', amountText = '', description = '', category = ''] = fields;
+    const date = fields[columnIndex.date] ?? '';
+    const amountText = fields[columnIndex.amount] ?? '';
+    const description = fields[columnIndex.description] ?? '';
+    const category = fields[columnIndex.category] ?? '';
 
     const lineErrors: string[] = [];
 
