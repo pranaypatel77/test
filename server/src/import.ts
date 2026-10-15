@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { getDefaultAccountId } from './app.js';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const EXPECTED_HEADER = ['date', 'amount', 'description', 'category'];
@@ -101,14 +102,6 @@ function findOrCreateCategory(db: Database.Database, name: string): number {
     .run({ name, color: '#9e9e9e', kind: 'expense' });
 
   return Number(result.lastInsertRowid);
-}
-
-/** Returns the id of the default account (the earliest created account). */
-function getDefaultAccountId(db: Database.Database): number | null {
-  const row = db.prepare(`SELECT id FROM accounts ORDER BY id ASC LIMIT 1`).get() as
-    | { id: number }
-    | undefined;
-  return row ? row.id : null;
 }
 
 /**

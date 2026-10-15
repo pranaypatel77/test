@@ -332,7 +332,7 @@ function accountExists(db: Database.Database, accountId: number): boolean {
 }
 
 /** Returns the id of the default account (the earliest created account). */
-function getDefaultAccountId(db: Database.Database): number | null {
+export function getDefaultAccountId(db: Database.Database): number | null {
   const row = db.prepare(`SELECT id FROM accounts ORDER BY id ASC LIMIT 1`).get() as
     | { id: number }
     | undefined;
