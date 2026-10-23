@@ -257,6 +257,20 @@ describe('Transactions page', () => {
     );
   });
 
+  it('opens the import dialog from the Import button', async () => {
+    const fetchMock = fetch as ReturnType<typeof vi.fn>;
+    mockInitialLoad(fetchMock, sampleTransactions);
+
+    renderTransactions();
+    await screen.findByRole('table');
+
+    expect(screen.queryByRole('dialog', { name: 'Import transactions' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Import' }));
+
+    expect(screen.getByRole('dialog', { name: 'Import transactions' })).toBeInTheDocument();
+  });
+
   it('shows a tab bar with one tab per account plus "All Accounts"', async () => {
     const fetchMock = fetch as ReturnType<typeof vi.fn>;
     mockInitialLoad(fetchMock, sampleTransactions);

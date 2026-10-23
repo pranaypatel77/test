@@ -2,7 +2,7 @@
 
 A personal expense tracker. Built on causal.stream.
 
-## Features (v1.0.0)
+## Features (v1.1.0)
 
 - **Transactions** — a Transactions API and page for recording income and
   expenses, with inline edit and delete directly in the table.
@@ -14,11 +14,29 @@ A personal expense tracker. Built on causal.stream.
   show spend against limit.
 - **Theming** — light/dark theming with a persistent toggle, plus automatic
   detection of the OS-level color scheme preference on first load.
+- **CSV import** — bulk-import transactions from a CSV file via an import
+  dialog on the Transactions page, or directly against the API.
 - **End-to-end coverage** — a Playwright smoke test that exercises the full
   create-transaction → set-budget → dashboard journey.
 
-Not in this release: CSV transaction import is planned for a future 1.1
-release and is not available in 1.0.0.
+### CSV import
+
+Transactions can be imported in bulk from a CSV file with a header row of:
+
+```
+date,amount,description,category
+```
+
+- `date` — `yyyy-mm-dd`, must be a valid calendar date.
+- `amount` — numeric; positive for income, negative for expenses.
+- `description` — non-empty text, stored as the transaction's payee.
+- `category` — matched case-insensitively to an existing category, or
+  created automatically if it doesn't exist yet. May be left blank.
+
+Upload a CSV from the Transactions page's import dialog, or `POST` it
+directly as `text/csv` to `POST /api/transactions/import`. The endpoint
+responds with a JSON summary of rows inserted, rows skipped, and any
+per-line errors.
 
 ## Monorepo structure
 
