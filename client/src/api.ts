@@ -184,3 +184,27 @@ export async function updateTransaction(id: number, input: TransactionInput): Pr
   }
   return response.json() as Promise<Transaction>;
 }
+
+export interface ImportRowError {
+  line: number;
+  reason: string;
+}
+
+export interface ImportResult {
+  inserted: number;
+  skipped: number;
+  errors: ImportRowError[];
+}
+
+/** Posts raw CSV text to the server import endpoint, which parses and inserts valid rows. */
+export async function importTransactionsCsv(csvText: string): Promise<ImportResult> {
+  const response = await fetch('/api/transactions/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/csv' },
+    body: csvText,
+  });
+  if (!response.ok) {
+    throw new Error('Failed to import transactions.');
+  }
+  return response.json() as Promise<ImportResult>;
+}
